@@ -4,6 +4,7 @@ using Application.Interfaces;
 using Application.Interfaces.Infrastructure.Postgres;
 using Application.Models;
 using Application.Models.Dtos;
+using Application.Models.Dtos.Article;
 using Application.Models.Enums;
 using Core.Domain.Entities;
 using Microsoft.Extensions.Options;

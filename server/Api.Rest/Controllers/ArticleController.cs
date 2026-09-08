@@ -1,6 +1,6 @@
-using Api.Rest.Extensions;
 using Application.Interfaces;
 using Application.Models.Dtos;
+using Application.Models.Dtos.Article;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Api.Rest.Controllers;
@@ -8,7 +8,7 @@ namespace Api.Rest.Controllers;
 [ApiController]
 public class ArticleController(IArticleService articleService) : ControllerBase
 {
-    public const string ControllerRoute = "api/auth/";
+    public const string ControllerRoute = "api/articles/";
 
     public const string CreateRoute = ControllerRoute + nameof(CreateArticle);
     
@@ -22,29 +22,30 @@ public class ArticleController(IArticleService articleService) : ControllerBase
 
     [HttpPost]
     [Route(CreateRoute)]
-    public async ActionResult<ArticleDto> CreateArticle([FromBody] ArticleDto dto)
+    public async Task<ActionResult<ArticleResponseDto>> CreateArticle([FromBody] ArticleRequestDto dto)
     {
-        return Ok(articleService.CreateArticleAsync(dto));
+        var response = await articleService.CreateArticleAsync(dto);
+        return Ok(response);
     }
     
     [HttpGet]
     [Route(RegisterRoute)]
-    public async ActionResult<ArticleDto> ReadArticle([FromBody] ArticleDto dto)
+    public async Task<ActionResult<ArticleResponseDto>> ReadArticle([FromBody] ArticleRequestDto dto)
     {
-        return Ok(articleService.GetArticlesAsync());
+        return Ok(await articleService.GetArticlesAsync());
     }
     
     [HttpPut]
     [Route(UpdateRoute)]
-    public async Task<ActionResult<ArticleDto>> UpdateArticle([FromBody] ArticleDto dto)
+    public async Task<ActionResult<ArticleResponseDto>> UpdateArticle([FromBody] ArticleRequestDto dto)
     {
-        return Ok(articleService.UpdateArticleAsync(dto));
+        return Ok(await articleService.UpdateArticleAsync(dto));
     }
     
-    [HttpDelete]
+    [HttpDelete("{id}")]
     [Route(DeleteRoute)]
-    public async Task<ActionResult<ArticleDto>> DeleteArticle([FromBody] ArticleDto dto)
+    public async Task<IActionResult> DeleteArticle([FromRoute] int id)
     {
-        return Ok(await articleService.DeleteArticleAsync(dto.Id));
+        return Ok(await articleService.DeleteArticleAsync(id));
     }
 }

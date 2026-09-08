@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Application.Models.Dtos;
+namespace Application.Models.Dtos.Article;
 
 public class ArticleResponseDto
 {
@@ -13,7 +13,7 @@ public class ArticleResponseDto
     
     public string Content { get; set; } = null!;
     
-    public DateTime PublishedAt { get; set; }
+    public DateTimeOffset PublishedAt { get; set; }
     
     public string Category { get; set; } = null!;
 }
