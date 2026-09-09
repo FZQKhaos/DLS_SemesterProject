@@ -1,7 +1,6 @@
-﻿using Application.Interfaces.Infrastructure.Postgres;
+using Application.Interfaces.Infrastructure.Postgres;
 using Application.Models;
 using Infrastructure.Postgres.Postgresql.Data;
-using Infrastructure.Postgres.Scaffolding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -11,7 +10,7 @@ public static class Extensions
 {
     public static IServiceCollection AddDataSourceAndRepositories(this IServiceCollection services)
     {
-        services.AddDbContext<MyDbContext>((service, options) =>
+        services.AddDbContext<MyDbContext>((_, options) =>
         {
             var provider = services.BuildServiceProvider();
             options.UseNpgsql(

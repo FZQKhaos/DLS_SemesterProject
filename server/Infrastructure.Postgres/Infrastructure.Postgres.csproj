@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
     <ItemGroup>
-        <ProjectReference Include="..\Infrastructure.Postgres.Scaffolding\Infrastructure.Postgres.Scaffolding.csproj"/>
         <ProjectReference Include="..\Application\Application.csproj"/>
     </ItemGroup>
 

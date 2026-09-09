@@ -1,6 +1,4 @@
-﻿using Application.Interfaces.Infrastructure.Postgres;
-using Core.Domain.Entities;
-using Infrastructure.Postgres.Scaffolding;
+using Application.Interfaces.Infrastructure.Postgres;
 
 namespace Infrastructure.Postgres.Postgresql.Data;
 

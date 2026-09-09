@@ -70,8 +70,6 @@ artifacts/
 # Tye
 .tye/
 
-# ASP.NET Scaffolding
-ScaffoldingReadMe.txt
 
 # StyleCop
 StyleCopReport.xml
