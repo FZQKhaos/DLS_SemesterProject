@@ -1,0 +1,139 @@
+# --- Shared building blocks (YAML anchors) --------------------------------
+# These &name blocks are not services themselves - they're templates that
+# the real services below pull in with "<<: *name", so we don't have to
+# repeat the same image/env eight or three times.
+
+x-db-image: &db-image
+  image: mcr.microsoft.com/azure-sql-edge:latest
+  environment:
+    ACCEPT_EULA: "Y"
+    MSSQL_SA_PASSWORD: "ArticleService_Dev7!"
+
+x-service-env: &service-env
+  ASPNETCORE_URLS: "http://+:80"
+  ASPNETCORE_ENVIRONMENT: "Development"
+  Database__User: "sa"
+  Database__Password: "ArticleService_Dev7!"
+  Database__Name: "ArticleDatabase"
+  # z-axis split: which host each continent's data lives on. Docker's
+  # internal DNS resolves these service names to the right container.
+  Shards__Africa: "article-db-africa"
+  Shards__Antarctica: "article-db-antarctica"
+  Shards__Asia: "article-db-asia"
+  Shards__Europe: "article-db-europe"
+  Shards__NorthAmerica: "article-db-north-america"
+  Shards__SouthAmerica: "article-db-south-america"
+  Shards__Oceania: "article-db-oceania"
+  Shards__Global: "article-db-global"
+
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: ArticleService/Dockerfile
+  environment:
+    <<: *service-env
+
+services:
+  # Runs once, creates the Articles table in all eight databases, then
+  # exits successfully. The three replicas below wait for that success
+  # before starting, so they never race each other over schema creation.
+  database-initializer:
+    <<: *app-image
+    environment:
+      <<: *service-env
+      Database__InitializeOnly: "true"
+    depends_on:
+      - article-db-africa
+      - article-db-antarctica
+      - article-db-asia
+      - article-db-europe
+      - article-db-north-america
+      - article-db-south-america
+      - article-db-oceania
+      - article-db-global
+    restart: "no"
+
+  # --- x-axis split: three identical stateless replicas ------------------
+  article-service-1:
+    <<: *app-image
+    depends_on:
+      database-initializer:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  article-service-2:
+    <<: *app-image
+    depends_on:
+      database-initializer:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  article-service-3:
+    <<: *app-image
+    depends_on:
+      database-initializer:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  load-balancer:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - article-service-1
+      - article-service-2
+      - article-service-3
+    restart: unless-stopped
+
+  # --- z-axis split: one database per continent, plus one global one -----
+  article-db-africa:
+    <<: *db-image
+    ports: ["14401:1433"]
+    volumes: ["africa-data:/var/opt/mssql"]
+
+  article-db-antarctica:
+    <<: *db-image
+    ports: ["14402:1433"]
+    volumes: ["antarctica-data:/var/opt/mssql"]
+
+  article-db-asia:
+    <<: *db-image
+    ports: ["14403:1433"]
+    volumes: ["asia-data:/var/opt/mssql"]
+
+  article-db-europe:
+    <<: *db-image
+    ports: ["14404:1433"]
+    volumes: ["europe-data:/var/opt/mssql"]
+
+  article-db-north-america:
+    <<: *db-image
+    ports: ["14405:1433"]
+    volumes: ["north-america-data:/var/opt/mssql"]
+
+  article-db-south-america:
+    <<: *db-image
+    ports: ["14406:1433"]
+    volumes: ["south-america-data:/var/opt/mssql"]
+
+  article-db-oceania:
+    <<: *db-image
+    ports: ["14407:1433"]
+    volumes: ["oceania-data:/var/opt/mssql"]
+
+  article-db-global:
+    <<: *db-image
+    ports: ["14408:1433"]
+    volumes: ["global-data:/var/opt/mssql"]
+
+volumes:
+  africa-data:
+  antarctica-data:
+  asia-data:
+  europe-data:
+  north-america-data:
+  south-america-data:
+  oceania-data:
+  global-data:

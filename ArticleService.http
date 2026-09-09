@@ -1,0 +1,29 @@
+@loadBalancer = http://localhost:8080
+@contentType = application/json
+
+### Create an article in Europe
+POST {{loadBalancer}}/api/articles
+Content-Type: {{contentType}}
+
+{
+  "title": "First article",
+  "content": "Hello from the ArticleService.",
+  "author": "John",
+  "continent": "Europe"
+}
+
+### Read it back (replace 1 with the id returned above)
+GET {{loadBalancer}}/api/articles/Europe/1
+
+### Update it
+PUT {{loadBalancer}}/api/articles/Europe/1
+Content-Type: {{contentType}}
+
+{
+  "title": "First article (edited)",
+  "content": "Hello from the ArticleService, now updated.",
+  "author": "John"
+}
+
+### Delete it
+DELETE {{loadBalancer}}/api/articles/Europe/1
