@@ -1,0 +1,27 @@
+@baseUrl = http://localhost:8080
+
+### Create an article in the Europe shard
+POST {{baseUrl}}/articles/europe
+Content-Type: application/json
+
+{
+  "title": "Community garden opens in Copenhagen",
+  "body": "Volunteers created a new public garden for the neighbourhood.",
+  "author": "Happy Headlines"
+}
+
+### Replace ARTICLE_ID with the id returned above
+GET {{baseUrl}}/articles/europe/ARTICLE_ID
+
+### Update
+PUT {{baseUrl}}/articles/europe/ARTICLE_ID
+Content-Type: application/json
+
+{
+  "title": "Community garden expands in Copenhagen",
+  "body": "The volunteer-led public garden has already expanded.",
+  "author": "Happy Headlines"
+}
+
+### Delete
+DELETE {{baseUrl}}/articles/europe/ARTICLE_ID

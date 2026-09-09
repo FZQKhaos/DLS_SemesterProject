@@ -1,0 +1,134 @@
+x-db-common: &db-common
+  image: mcr.microsoft.com/azure-sql-edge:latest
+  environment:
+    ACCEPT_EULA: "Y"
+    MSSQL_SA_PASSWORD: "HappyHeadlines7!"
+
+x-service-environment: &service-environment
+  ASPNETCORE_URLS: "http://+:80"
+  ASPNETCORE_ENVIRONMENT: "Development"
+  Database__User: "sa"
+  Database__Password: "HappyHeadlines7!"
+  Database__Name: "ArticleDatabase"
+  Shards__Africa: "article-db-africa"
+  Shards__Antarctica: "article-db-antarctica"
+  Shards__Asia: "article-db-asia"
+  Shards__Europe: "article-db-europe"
+  Shards__NorthAmerica: "article-db-north-america"
+  Shards__SouthAmerica: "article-db-south-america"
+  Shards__Oceania: "article-db-oceania"
+  Shards__Global: "article-db-global"
+
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: ArticleService/Dockerfile
+  environment:
+    <<: *service-environment
+
+x-api-common: &api-common
+  <<: *app-common
+  depends_on:
+    database-initializer:
+      condition: service_completed_successfully
+  restart: unless-stopped
+
+services:
+  # One one-shot process owns schema creation. This prevents the three API
+  # replicas from racing on CREATE DATABASE and deadlocking in SQL Server.
+  database-initializer:
+    <<: *app-common
+    environment:
+      <<: *service-environment
+      Database__InitializeOnly: "true"
+      INSTANCE_NAME: "database-initializer"
+    depends_on:
+      - article-db-africa
+      - article-db-antarctica
+      - article-db-asia
+      - article-db-europe
+      - article-db-north-america
+      - article-db-south-america
+      - article-db-oceania
+      - article-db-global
+    restart: "no"
+
+  article-service-1:
+    <<: *api-common
+    environment:
+      <<: *service-environment
+      INSTANCE_NAME: "article-service-1"
+
+  article-service-2:
+    <<: *api-common
+    environment:
+      <<: *service-environment
+      INSTANCE_NAME: "article-service-2"
+
+  article-service-3:
+    <<: *api-common
+    environment:
+      <<: *service-environment
+      INSTANCE_NAME: "article-service-3"
+
+  load-balancer:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - article-service-1
+      - article-service-2
+      - article-service-3
+    restart: unless-stopped
+
+  article-db-africa:
+    <<: *db-common
+    volumes:
+      - africa-data:/var/opt/mssql
+
+  article-db-antarctica:
+    <<: *db-common
+    volumes:
+      - antarctica-data:/var/opt/mssql
+
+  article-db-asia:
+    <<: *db-common
+    volumes:
+      - asia-data:/var/opt/mssql
+
+  article-db-europe:
+    <<: *db-common
+    volumes:
+      - europe-data:/var/opt/mssql
+
+  article-db-north-america:
+    <<: *db-common
+    volumes:
+      - north-america-data:/var/opt/mssql
+
+  article-db-south-america:
+    <<: *db-common
+    volumes:
+      - south-america-data:/var/opt/mssql
+
+  article-db-oceania:
+    <<: *db-common
+    volumes:
+      - oceania-data:/var/opt/mssql
+
+  article-db-global:
+    <<: *db-common
+    volumes:
+      - global-data:/var/opt/mssql
+
+volumes:
+  africa-data:
+  antarctica-data:
+  asia-data:
+  europe-data:
+  north-america-data:
+  south-america-data:
+  oceania-data:
+  global-data:
