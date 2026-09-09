@@ -91,8 +91,11 @@ docker compose down -v
 
 ## Sådan tester du det
 
-Åbn `ArticleService.http` i Rider (eller VS Code med REST Client-extension) og tryk "Run" over hvert kald - eller brug curl:
+Nemmest: åbn `ArticleService.http` i Rider (eller VS Code med REST Client-extension) og tryk "Run" over hvert kald - så slipper du for shell-syntaks helt.
 
+Vil du hellere bruge terminalen, så vær opmærksom på at **bash og PowerShell har forskellig syntaks** - `curl` i PowerShell er faktisk et alias for `Invoke-WebRequest`, som ikke forstår `-X`/`-H`/`-d`, og `\` er ikke linjefortsættelse i PowerShell (det er backtick `` ` ``).
+
+**Git Bash / macOS / Linux:**
 ```bash
 # Create
 curl -X POST http://localhost:8080/api/articles \
@@ -112,6 +115,29 @@ curl -X PUT http://localhost:8080/api/articles/Europe/1 \
 
 # Delete
 curl -X DELETE http://localhost:8080/api/articles/Europe/1
+```
+
+**PowerShell (Windows-terminalen):** brug enten `curl.exe` (den rigtige curl, ikke aliaset) med backtick til linjefortsættelse, eller `Invoke-RestMethod`:
+
+```powershell
+# Create
+Invoke-RestMethod -Uri http://localhost:8080/api/articles -Method Post `
+  -ContentType "application/json" `
+  -Body '{"title":"Foerste artikel","content":"Hej fra ArticleService","author":"John","continent":"Europe"}'
+
+# List
+Invoke-RestMethod -Uri http://localhost:8080/api/articles/Europe
+
+# Read
+Invoke-RestMethod -Uri http://localhost:8080/api/articles/Europe/1
+
+# Update
+Invoke-RestMethod -Uri http://localhost:8080/api/articles/Europe/1 -Method Put `
+  -ContentType "application/json" `
+  -Body '{"title":"Opdateret titel","content":"Ny tekst","author":"John"}'
+
+# Delete
+Invoke-RestMethod -Uri http://localhost:8080/api/articles/Europe/1 -Method Delete
 ```
 
 Der er også Swagger UI tilgængeligt fra hver enkelt instans (ikke gennem load balanceren) når `ASPNETCORE_ENVIRONMENT=Development`, f.eks. hvis du kører én instans direkte med `dotnet run` under `ArticleService/`.
