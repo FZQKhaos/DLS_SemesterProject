@@ -27,7 +27,7 @@ En REST-baseret ArticleService med to former for horisontal skalering (AKF scale
 
 ### REST API'et
 
-`ArticlesController` udstiller fire endpoints:
+`ArticlesController` udstiller de fire krævede CRUD-endpoints, plus ét ekstra "list"-endpoint som gør API'et nemmere at browser-teste:
 
 | Handling | Endpoint |
 |---|---|
@@ -35,8 +35,11 @@ En REST-baseret ArticleService med to former for horisontal skalering (AKF scale
 | Read   | `GET /api/articles/{continent}/{id}` |
 | Update | `PUT /api/articles/{continent}/{id}` |
 | Delete | `DELETE /api/articles/{continent}/{id}` |
+| List (bonus) | `GET /api/articles/{continent}` |
 
-`continent` er en del af URL'en for Read/Update/Delete, fordi et `id` kun er unikt *inden for* én kontinent-database - ikke på tværs af alle otte. Man er derfor nødt til at fortælle serviceren hvilken database den skal kigge i.
+`continent` er en del af URL'en for Read/Update/Delete/List, fordi et `id` kun er unikt *inden for* én kontinent-database - ikke på tværs af alle otte. Man er derfor nødt til at fortælle serviceren hvilken database den skal kigge i.
+
+> Bemærk: `GET /api/articles` (uden continent) findes ikke og giver `405 Method Not Allowed`, hvis man taster URL'en direkte i browseren - browseren sender GET, men den adresse er kun mappet til `POST` (Create). Brug `GET /api/articles/{continent}` for at liste artikler.
 
 ### x-axis split - `docker-compose.yml` + `nginx.conf`
 
@@ -59,7 +62,7 @@ ArticleService/
     ArticleDbContext.cs               EF Core-gateway til én database
     IShardRouter.cs / ShardRouter.cs  kontinent -> connection string
     IArticleRepository.cs / ArticleRepository.cs   CRUD-operationer
-    DatabaseInitializer.cs            opretter skema i alle 8 databaser
+    DatabaseInitializer.cs            opretter skema + seed-data i alle 8 databaser
   Program.cs                          app-opstart + DI-opsætning
 docker-compose.yml                    alle 12 containere (8 DB + 3 service + 1 load balancer)
 nginx.conf                            load balancer-konfiguration
@@ -78,6 +81,8 @@ Det starter alle 12 containere: 8 SQL Server-databaser, en engangs-initializer d
 
 Første opstart tager typisk et minuts tid, fordi SQL Server-containerne skal nå at blive klar, før initializeren kan oprette skemaet.
 
+Initializeren opretter samtidig 5 små test-artikler ("Artikel 1" - "Artikel 5"), spredt ud over Europe, Asia, Africa, NorthAmerica og Global, så der er noget at kigge på med det samme. Seedningen sker kun hvis en databases tabel er tom, så den bliver ikke duplikeret ved genstart.
+
 For at lukke alt ned igen (inkl. data i databaserne):
 
 ```bash
@@ -94,7 +99,10 @@ curl -X POST http://localhost:8080/api/articles \
   -H "Content-Type: application/json" \
   -d '{"title":"Første artikel","content":"Hej fra ArticleService","author":"John","continent":"Europe"}'
 
-# Read (brug det id du fik tilbage fra Create)
+# List (viser bl.a. de seedede test-artikler)
+curl http://localhost:8080/api/articles/Europe
+
+# Read (brug det id du fik tilbage fra Create eller List)
 curl http://localhost:8080/api/articles/Europe/1
 
 # Update

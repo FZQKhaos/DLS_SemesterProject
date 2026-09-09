@@ -12,7 +12,10 @@ Content-Type: {{contentType}}
   "continent": "Europe"
 }
 
-### Read it back (replace 1 with the id returned above)
+### List every article for a continent (also shows the 5 seeded demo articles)
+GET {{loadBalancer}}/api/articles/Europe
+
+### Read one article back (replace 1 with the id returned above)
 GET {{loadBalancer}}/api/articles/Europe/1
 
 ### Update it

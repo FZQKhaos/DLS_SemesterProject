@@ -20,6 +20,12 @@ public class ArticleRepository(IShardRouter shardRouter) : IArticleRepository
         return article;
     }
 
+    public async Task<List<Article>> GetAllAsync(Continent continent)
+    {
+        await using var db = OpenContext(continent);
+        return await db.Articles.OrderBy(a => a.Id).ToListAsync();
+    }
+
     public async Task<Article?> GetAsync(Continent continent, int id)
     {
         await using var db = OpenContext(continent);

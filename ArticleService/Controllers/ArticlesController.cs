@@ -36,6 +36,16 @@ public class ArticlesController(IArticleRepository repository) : ControllerBase
             created);
     }
 
+    // GET api/articles/{continent}
+    // Bonus endpoint on top of the required four (Create/Read/Update/Delete):
+    // lists every article in one continent's database, so the API is
+    // browsable without already knowing an id.
+    [HttpGet("{continent}")]
+    public async Task<ActionResult<List<Article>>> GetAll(Continent continent)
+    {
+        return Ok(await repository.GetAllAsync(continent));
+    }
+
     // GET api/articles/{continent}/{id}
     [HttpGet("{continent}/{id:int}")]
     public async Task<ActionResult<Article>> Get(Continent continent, int id)
