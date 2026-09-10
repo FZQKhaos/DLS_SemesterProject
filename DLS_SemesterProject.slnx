@@ -1,9 +1,0 @@
-<Solution>
-    <Folder Name="/server/">
-        <Project Path="server/Api.Rest/Api.Rest.csproj" Type="C#" />
-        <Project Path="server/Application/Application.csproj" Type="C#" />
-        <Project Path="server/Core.Domain/Core.Domain.csproj" Type="C#" />
-        <Project Path="server/Startup/Startup.csproj" Type="C#" />
-        <Project Path="server\Infrastructure.Postgres\Infrastructure.Postgres.csproj" Type="C#" />
-    </Folder>
-</Solution>

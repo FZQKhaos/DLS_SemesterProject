@@ -1,0 +1,148 @@
+﻿services:
+  africa-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: africa-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5432:5432"
+    volumes:
+      - africa_data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  antarctica-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: antarctica-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5433:5432"
+    volumes:
+      - antarctica_data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  asia-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: asia-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5434:5432"
+    volumes:
+      - asia_data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  europe-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: europe-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5435:5432"
+    volumes:
+      - europe_data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  north-america-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: north_america-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5436:5432"
+    volumes:
+      - north-america-data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+  
+  south-america-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: south_america-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5437:5432"
+    volumes:
+      - south-america-data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+  
+  oceania-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: oceania-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5438:5432"
+    volumes:
+      - oceania-data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    
+  global-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: global-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    ports:
+        - "5439:5432"
+    volumes:
+      - global_data:/var/lib/postgresql/data
+      - ./ArticleService/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  article-service-1:
+    build: 
+      context: .
+      dockerfile: ArticleService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+    ports:
+      - "8081:8080"
+  
+  article-service-2:
+    build:
+      context: .
+      dockerfile: ArticleService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+    ports:
+      - "8082:8080"
+
+  article-service-3:
+    build:
+      context: .
+      dockerfile: ArticleService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+    ports:
+      - "8083:8080"
+  
+  lb:
+    image: nginx:alpine
+    container_name: article-lb
+    ports:
+      - "5000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - article-service-1
+      - article-service-2
+      - article-service-3
+
+volumes:
+  africa_data:
+  antarctica_data:
+  asia_data:
+  europe_data:
+  north-america-data:
+  south-america-data:
+  oceania-data:
+  global_data:
