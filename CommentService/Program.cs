@@ -13,12 +13,24 @@ builder.Services.AddDbContext<CommentDbContext>(options =>
     options.UseSqlServer(BuildConnectionString(builder.Configuration)));
 builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 
+// Built once, here, and handed to AddPolicyHandler as a fixed instance
+// (not a per-request factory) - a circuit breaker's whole job is to
+// accumulate failure counts *across* calls, so every request through
+// this HttpClient must run through the exact same policy object. The
+// other AddPolicyHandler overload - a Func<IServiceProvider,
+// HttpRequestMessage, IAsyncPolicy<...>> - re-evaluates on every single
+// request and would silently hand back a brand-new breaker each time,
+// so it would never actually trip.
+using var circuitBreakerLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
+var profanityCircuitBreaker = BuildCircuitBreakerPolicy(
+    circuitBreakerLoggerFactory.CreateLogger("ProfanityServiceCircuitBreaker"));
+
 // Swimlane isolation (see the illustration in the assignment notes):
 // ProfanityService gets its own dedicated, named HttpClient - its own
 // connection pool and its own short timeout - registered via
 // AddHttpClient so a slow or dead ProfanityService can never starve
 // resources CommentService needs for anything else (its own database
-// calls, its other endpoints). The circuit breaker below is scoped to
+// calls, its other endpoints). The circuit breaker above is scoped to
 // this HttpClient alone: if ProfanityService starts failing, only calls
 // to *it* get short-circuited - the rest of CommentService keeps running.
 builder.Services.AddHttpClient<IProfanityServiceClient, ProfanityServiceClient>((services, client) =>
@@ -28,7 +40,7 @@ builder.Services.AddHttpClient<IProfanityServiceClient, ProfanityServiceClient>(
         client.BaseAddress = new Uri(baseUrl);
         client.Timeout = TimeSpan.FromSeconds(3);
     })
-    .AddPolicyHandler((services, _) => BuildCircuitBreakerPolicy(services));
+    .AddPolicyHandler(profanityCircuitBreaker);
 
 var app = builder.Build();
 
@@ -57,10 +69,8 @@ return;
 // the resulting BrokenCircuitException and falls back to letting the
 // comment through unchecked - that fallback is the circuit breaker
 // "taking over" while ProfanityService is unavailable.
-static IAsyncPolicy<HttpResponseMessage> BuildCircuitBreakerPolicy(IServiceProvider services)
+static IAsyncPolicy<HttpResponseMessage> BuildCircuitBreakerPolicy(ILogger logger)
 {
-    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("ProfanityServiceCircuitBreaker");
-
     return Policy<HttpResponseMessage>
         .Handle<HttpRequestException>()
         .Or<TaskCanceledException>()
