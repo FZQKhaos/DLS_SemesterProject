@@ -33,6 +33,30 @@ x-app-image: &app-image
   environment:
     <<: *service-env
 
+# CommentService and ProfanityService are their own swimlane: separate
+# databases, separate containers, and - see the (missing!) depends_on
+# below - comment-service does NOT wait for or require profanity-service
+# to be up. They're independently deployable, and CommentService's
+# circuit breaker (CommentService/Program.cs) is what lets it keep
+# working when ProfanityService isn't there.
+x-comment-service-env: &comment-service-env
+  ASPNETCORE_URLS: "http://+:80"
+  ASPNETCORE_ENVIRONMENT: "Development"
+  Database__Host: "comment-db"
+  Database__User: "sa"
+  Database__Password: "CommentService_Dev7!"
+  Database__Name: "CommentDatabase"
+  # Direct service-to-service call, no gateway/UI in between.
+  ProfanityService__BaseUrl: "http://profanity-service"
+
+x-profanity-service-env: &profanity-service-env
+  ASPNETCORE_URLS: "http://+:80"
+  ASPNETCORE_ENVIRONMENT: "Development"
+  Database__Host: "profanity-db"
+  Database__User: "sa"
+  Database__Password: "ProfanityService_Dev7!"
+  Database__Name: "ProfanityDatabase"
+
 services:
   # Runs once, creates the Articles table in all eight databases, then
   # exits successfully. The three replicas below wait for that success
@@ -128,6 +152,48 @@ services:
     ports: ["14408:1433"]
     volumes: ["global-data:/var/opt/mssql"]
 
+  # --- CommentService + ProfanityService, fault-isolated from each other -
+
+  comment-service:
+    build:
+      context: .
+      dockerfile: CommentService/Dockerfile
+    environment:
+      <<: *comment-service-env
+    ports:
+      - "8081:80"
+    depends_on:
+      - comment-db
+    restart: unless-stopped
+
+  comment-db:
+    <<: *db-image
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "CommentService_Dev7!"
+    ports: ["14410:1433"]
+    volumes: ["comment-data:/var/opt/mssql"]
+
+  profanity-service:
+    build:
+      context: .
+      dockerfile: ProfanityService/Dockerfile
+    environment:
+      <<: *profanity-service-env
+    ports:
+      - "8082:80"
+    depends_on:
+      - profanity-db
+    restart: unless-stopped
+
+  profanity-db:
+    <<: *db-image
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "ProfanityService_Dev7!"
+    ports: ["14420:1433"]
+    volumes: ["profanity-data:/var/opt/mssql"]
+
 volumes:
   africa-data:
   antarctica-data:
@@ -137,3 +203,5 @@ volumes:
   south-america-data:
   oceania-data:
   global-data:
+  comment-data:
+  profanity-data:

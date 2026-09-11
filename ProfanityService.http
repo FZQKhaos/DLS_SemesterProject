@@ -1,0 +1,29 @@
+@profanityService = http://localhost:8082
+@contentType = application/json
+
+### Check clean text
+POST {{profanityService}}/api/profanity/check
+Content-Type: {{contentType}}
+
+{
+  "text": "Great article, thanks for sharing!"
+}
+
+### Check text containing a seeded banned word
+POST {{profanityService}}/api/profanity/check
+Content-Type: {{contentType}}
+
+{
+  "text": "This article is written by an idiot."
+}
+
+### List the banned-word list currently in use
+GET {{profanityService}}/api/profanity/words
+
+### Add a banned word
+POST {{profanityService}}/api/profanity/words
+Content-Type: {{contentType}}
+
+{
+  "word": "nonsense"
+}

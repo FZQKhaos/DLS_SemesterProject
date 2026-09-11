@@ -5,6 +5,10 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArticleService", "ArticleService\ArticleService.csproj", "{22321635-C920-420D-8E52-D393D04FC99E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CommentService", "CommentService\CommentService.csproj", "{ABB2232A-6CBD-4B79-B4CD-56870EABFA9C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProfanityService", "ProfanityService\ProfanityService.csproj", "{90CF06D7-6972-4731-89ED-09FF6FBA20AE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +19,14 @@ Global
 		{22321635-C920-420D-8E52-D393D04FC99E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{22321635-C920-420D-8E52-D393D04FC99E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{22321635-C920-420D-8E52-D393D04FC99E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ABB2232A-6CBD-4B79-B4CD-56870EABFA9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ABB2232A-6CBD-4B79-B4CD-56870EABFA9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ABB2232A-6CBD-4B79-B4CD-56870EABFA9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ABB2232A-6CBD-4B79-B4CD-56870EABFA9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{90CF06D7-6972-4731-89ED-09FF6FBA20AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{90CF06D7-6972-4731-89ED-09FF6FBA20AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{90CF06D7-6972-4731-89ED-09FF6FBA20AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{90CF06D7-6972-4731-89ED-09FF6FBA20AE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

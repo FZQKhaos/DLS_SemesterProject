@@ -1,0 +1,48 @@
+@commentService = http://localhost:8081
+@profanityService = http://localhost:8082
+@contentType = application/json
+
+### Create a clean comment (ProfanityService checks it and lets it through)
+POST {{commentService}}/api/comments
+Content-Type: {{contentType}}
+
+{
+  "articleId": 1,
+  "author": "John",
+  "text": "Great article, thanks for sharing!"
+}
+
+### Create a comment containing a banned word - rejected with 400
+POST {{commentService}}/api/comments
+Content-Type: {{contentType}}
+
+{
+  "articleId": 1,
+  "author": "John",
+  "text": "This article is written by an idiot."
+}
+
+### List every comment for an article
+GET {{commentService}}/api/comments/article/1
+
+### Read one comment back (replace 1 with the id returned above)
+GET {{commentService}}/api/comments/1
+
+### Delete it
+DELETE {{commentService}}/api/comments/1
+
+### --- Circuit breaker demo -------------------------------------------
+### 1. Stop profanity-service: docker compose stop profanity-service
+### 2. Post a few comments in a row - the first 3 each wait out the
+###    3s HttpClient timeout before falling back; after 3 failures the
+###    circuit opens and every comment after that is accepted instantly
+###    with ProfanityChecked = false, because CommentService stops even
+###    trying to reach ProfanityService for 30 seconds.
+POST {{commentService}}/api/comments
+Content-Type: {{contentType}}
+
+{
+  "articleId": 1,
+  "author": "John",
+  "text": "Comment posted while ProfanityService is down."
+}
