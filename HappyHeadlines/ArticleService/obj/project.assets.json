@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "targets": {
     "net8.0": {
       "Microsoft.AspNetCore.OpenApi/8.0.8": {
@@ -1116,24 +1116,32 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\valha\\.nuget\\packages\\": {}
+    "C:\\Users\\J_Hop\\.nuget\\packages\\": {},
+    "E:\\Visual Studio 2026 Cache\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\valha\\Desktop\\PBA-Softwareudvikler\\DLS\\DLS_SemesterProject\\HappyHeadlines\\ArticleService\\ArticleService.csproj",
+      "projectUniqueName": "C:\\Users\\J_Hop\\Desktop\\Software Development Visual Studio\\Semester 2\\Development of Large Systems\\Semester Project\\HappyHeadlines\\ArticleService\\ArticleService.csproj",
       "projectName": "ArticleService",
-      "projectPath": "C:\\Users\\valha\\Desktop\\PBA-Softwareudvikler\\DLS\\DLS_SemesterProject\\HappyHeadlines\\ArticleService\\ArticleService.csproj",
-      "packagesPath": "C:\\Users\\valha\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\valha\\Desktop\\PBA-Softwareudvikler\\DLS\\DLS_SemesterProject\\HappyHeadlines\\ArticleService\\obj\\",
+      "projectPath": "C:\\Users\\J_Hop\\Desktop\\Software Development Visual Studio\\Semester 2\\Development of Large Systems\\Semester Project\\HappyHeadlines\\ArticleService\\ArticleService.csproj",
+      "packagesPath": "C:\\Users\\J_Hop\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\J_Hop\\Desktop\\Software Development Visual Studio\\Semester 2\\Development of Large Systems\\Semester Project\\HappyHeadlines\\ArticleService\\obj\\",
       "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "E:\\Visual Studio 2026 Cache\\Shared\\NuGetPackages"
+      ],
       "configFilePaths": [
-        "C:\\Users\\valha\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\J_Hop\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
       ],
       "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "C:\\Program Files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -1152,7 +1160,8 @@
         "enableAudit": "true",
         "auditLevel": "low",
         "auditMode": "direct"
-      }
+      },
+      "SdkAnalysisLevel": "10.0.300"
     },
     "frameworks": {
       "net8.0": {
@@ -1191,7 +1200,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.401/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302/PortableRuntimeIdentifierGraph.json"
       }
     }
   }
