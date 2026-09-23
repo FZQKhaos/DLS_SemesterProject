@@ -213,6 +213,43 @@
       - moderation-link
       - comment-edge
 
+  draft-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: draft-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    volumes:
+      - draft_data:/var/lib/postgresql/data
+      - ./DraftService/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d draft-db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5440:5432"
+    networks:
+      - draft-data
+      - draft-edge
+  
+  draft-service:
+    build:
+      context: .
+      dockerfile: DraftService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DraftDatabase: Host=draft-db;Database=draft-db;Username=appuser;Password=secret123
+    ports:
+      - "8084:8080"
+    depends_on:
+      draft-db:
+        condition: service_healthy
+    networks:
+      - draft-data
+      - draft-edge
+
 volumes:
   africa_data:
   antarctica_data:
@@ -224,6 +261,7 @@ volumes:
   global_data:
   comment_data:
   profanity_data:
+  draft_data:
 
 networks:
   article-data:
@@ -239,3 +277,8 @@ networks:
   comment-edge:
 
   profanity-edge:
+
+  draft-data:
+    internal: true
+
+  draft-edge:

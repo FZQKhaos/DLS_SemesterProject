@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS drafts (
+    id TEXT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    continent VARCHAR(100) NOT NULL
+);
