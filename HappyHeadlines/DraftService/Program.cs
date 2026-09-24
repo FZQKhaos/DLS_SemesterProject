@@ -2,6 +2,8 @@ using Npgsql;
 using DraftService.Data;
 using DraftService.Data.Interface;
 using DraftService.Service.Interface;
+using Monitoring;
+using Serilog;
 
 namespace DraftService;
 
@@ -10,6 +12,8 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        
+        builder.AddMonitoring("DraftService");
         
         builder.Services.AddControllers();
         
@@ -35,8 +39,15 @@ public class Program
         app.MapControllers();
         
         //app.UseHttpsRedirection();
+        try
+        {
+            app.Run();
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+        }
         
-        app.Run();
     }
 }
 

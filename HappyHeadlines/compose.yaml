@@ -249,7 +249,28 @@
     networks:
       - draft-data
       - draft-edge
+      - monitoring
 
+  seq:
+    image: datalust/seq
+    ports:
+      - "5341:5341"
+      - "5342:80"
+    volumes:
+      - rps_seq_data:/data
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+    networks:
+      - monitoring
+
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - monitoring
+  
 volumes:
   africa_data:
   antarctica_data:
@@ -262,6 +283,7 @@ volumes:
   comment_data:
   profanity_data:
   draft_data:
+  rps_seq_data:
 
 networks:
   article-data:
@@ -273,7 +295,8 @@ networks:
     internal: true
   moderation-link:
     internal: true
-
+  monitoring:
+  
   comment-edge:
 
   profanity-edge:
