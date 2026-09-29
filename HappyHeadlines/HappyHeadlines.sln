@@ -16,6 +16,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CommentService", "CommentSe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProfanityService", "ProfanityService\ProfanityService.csproj", "{0BDB28E5-A9FA-33F8-6DCE-E2131539EF33}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DraftService", "DraftService\DraftService.csproj", "{5ECD390A-2E91-4501-A573-C505100E4DB2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Monitoring", "Monitoring\Monitoring.csproj", "{EAA7835E-D0A6-481D-86D3-04C02F8B179C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -34,6 +38,14 @@ Global
 		{0BDB28E5-A9FA-33F8-6DCE-E2131539EF33}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0BDB28E5-A9FA-33F8-6DCE-E2131539EF33}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0BDB28E5-A9FA-33F8-6DCE-E2131539EF33}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5ECD390A-2E91-4501-A573-C505100E4DB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5ECD390A-2E91-4501-A573-C505100E4DB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5ECD390A-2E91-4501-A573-C505100E4DB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5ECD390A-2E91-4501-A573-C505100E4DB2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EAA7835E-D0A6-481D-86D3-04C02F8B179C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EAA7835E-D0A6-481D-86D3-04C02F8B179C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EAA7835E-D0A6-481D-86D3-04C02F8B179C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EAA7835E-D0A6-481D-86D3-04C02F8B179C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
