@@ -26,6 +26,23 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
         return article;
     }
 
+    public async Task SavePublishedArticle(Article article, CancellationToken cancellationToken = default)
+    {
+        using var connection = coordinator.GetConnectionForContinent(article.Continent);
+        using var cmd = new NpgsqlCommand(
+            @"INSERT INTO articles (id, title, body, continent)
+              VALUES (@id, @title, @body, @continent)
+              ON CONFLICT (id) DO NOTHING;",
+            connection);
+
+        cmd.Parameters.AddWithValue("id", article.Id);
+        cmd.Parameters.AddWithValue("title", article.Title);
+        cmd.Parameters.AddWithValue("body", article.Body);
+        cmd.Parameters.AddWithValue("continent", article.Continent);
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<Article?> GetArticleByIdAndContinent(string id, string continent)
     {
         using var connection = coordinator.GetConnectionForContinent(continent);

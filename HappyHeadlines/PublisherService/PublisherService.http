@@ -1,0 +1,26 @@
+@PublisherService_HostAddress = http://localhost:8085
+
+POST {{PublisherService_HostAddress}}/Publisher
+Content-Type: application/json
+
+{
+  "id": "article-001",
+  "title": "A sample headline",
+  "body": "A sample article body.",
+  "continent": "Europe"
+}
+
+###
+POST http://localhost:8085/Publisher
+Content-Type: application/json
+traceparent: 00-11111111111111111111111111111111-2222222222222222-01
+
+{
+  "id": "article-test-001",
+  "title": "Queue integration test",
+  "body": "Testing the ArticleService subscriber.",
+  "continent": "Europe"
+}
+
+###
+GET http://localhost:8081/Article/article-test-001?continent=Europe
