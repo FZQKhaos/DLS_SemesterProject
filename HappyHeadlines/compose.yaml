@@ -95,6 +95,24 @@
       - ./ArticleService/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks: [article-data]
 
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    networks: [article-data]
+
+  article-cache-worker:
+    build:
+      context: .
+      dockerfile: ArticleCacheWorker/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Redis__ConnectionString: redis:6379
+      ArticleCache__RefreshIntervalSeconds: 300
+    depends_on:
+      - global-db
+      - redis
+    networks: [article-data]
+
   article-service-1:
     build:
       context: .
@@ -102,6 +120,7 @@
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
       RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
     ports: ["8081:8080"]
     depends_on:
@@ -116,6 +135,7 @@
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
       RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
     ports: ["8082:8080"]
     depends_on:
@@ -130,6 +150,7 @@
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
       RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
     ports: ["8083:8080"]
     depends_on:

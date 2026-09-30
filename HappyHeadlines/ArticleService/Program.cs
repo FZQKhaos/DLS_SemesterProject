@@ -1,3 +1,4 @@
+﻿using ArticleService.Cache;
 using ArticleService.Data;
 using ArticleService.Data.Interface;
 using ArticleService.Service.Interface;
@@ -5,6 +6,7 @@ using ArticleService.Worker;
 using EasyNetQ;
 using EasyNetQ.Serialization.SystemTextJson;
 using Monitoring;
+using StackExchange.Redis;
 
 namespace ArticleService;
 
@@ -21,6 +23,16 @@ public class Program
         builder.Services.AddScoped<Coordinator>();
         builder.Services.AddScoped<IArticleService, Service.ArticleService>();
         builder.Services.AddScoped<IArticleRepository, ArticleRepository>();
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var connectionString = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+            var options = ConfigurationOptions.Parse(connectionString);
+            options.AbortOnConnectFail = false;
+            options.ConnectTimeout = 5000;
+            options.SyncTimeout = 5000;
+            return ConnectionMultiplexer.Connect(options);
+        });
+        builder.Services.AddSingleton<IArticleCache, RedisArticleCache>();
 
         var rabbitMqConnectionString = builder.Configuration["RabbitMq:ConnectionString"]
             ?? "host=localhost;username=appuser;password=apppassword";

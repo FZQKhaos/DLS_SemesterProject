@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\ArticleService\ArticleService.csproj">
+            <PrivateAssets>all</PrivateAssets>
+            <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+            <AdditionalProperties>EnableDefaultContentItems=false;GenerateAppSettingsFile=false</AdditionalProperties>
+        </ProjectReference>
+    </ItemGroup>
+
+</Project>
