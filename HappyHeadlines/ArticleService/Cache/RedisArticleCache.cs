@@ -9,6 +9,8 @@ public sealed class RedisArticleCache(
     IConnectionMultiplexer connectionMultiplexer,
     ILogger<RedisArticleCache> logger) : IArticleCache
 {
+    private const string HitsKey = "metrics:article-cache:hits";
+    private const string MissesKey = "metrics:article-cache:misses";
     private readonly IDatabase database = connectionMultiplexer.GetDatabase();
 
     public async Task<Article?> GetArticleAsync(string id, CancellationToken cancellationToken = default)
@@ -18,14 +20,21 @@ public sealed class RedisArticleCache(
         var key = BuildKey(id);
         var value = await database.StringGetAsync(key);
         if (value.IsNullOrEmpty)
+        {
+            await IncrementMetricAsync(MissesKey);
             return null;
+        }
 
         try
         {
             byte[]? payload = value;
             if (payload is null)
+            {
+                await IncrementMetricAsync(MissesKey);
                 return null;
+            }
 
+            await IncrementMetricAsync(HitsKey);
             return JsonSerializer.Deserialize<Article>(payload);
         }
         catch (JsonException exception)
@@ -53,6 +62,18 @@ public sealed class RedisArticleCache(
         {
             logger.LogError(exception, "Failed to write article {ArticleId} to Redis key {RedisKey}.", article.Id, key);
             throw;
+        }
+    }
+
+    private async Task IncrementMetricAsync(string metricKey)
+    {
+        try
+        {
+            await database.StringIncrementAsync(metricKey);
+        }
+        catch (RedisException exception)
+        {
+            logger.LogWarning(exception, "Redis cache metric increment failed for {MetricKey}.", metricKey);
         }
     }
 

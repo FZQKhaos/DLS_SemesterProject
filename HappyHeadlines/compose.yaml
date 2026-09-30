@@ -1,4 +1,4 @@
-﻿services:
+services:
   africa-db:
     image: postgres:16-alpine
     environment:
@@ -98,7 +98,7 @@
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
-    networks: [article-data]
+    networks: [article-data, monitoring]
 
   article-cache-worker:
     build:
@@ -241,10 +241,28 @@
         condition: service_healthy
       profanity-service:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - comment-data
       - moderation-link
       - comment-edge
+      - monitoring
+
+  cache-dashboard:
+    build:
+      context: .
+      dockerfile: CacheDashboard/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
+    ports:
+      - "7000:8080"
+    depends_on:
+      - redis
+    networks:
+      - monitoring
 
   draft-db:
     image: postgres:16-alpine

@@ -1,3 +1,4 @@
+using CommentService.Cache;
 using CommentService.Client.Interface;
 using CommentService.Data.Interface;
 using CommentService.Domain;
@@ -6,7 +7,11 @@ using CommentService.Service.Interface;
 
 namespace CommentService.Service;
 
-public sealed class CommentService(ICommentRepository repository, IProfanityClient profanityClient) : ICommentService
+public sealed class CommentService(
+    ICommentRepository repository,
+    IProfanityClient profanityClient,
+    ICommentCache commentCache,
+    ILogger<CommentService> logger) : ICommentService
 {
     public async Task<CommentResponseDto> CreateAsync(CommentRequestDto dto, CancellationToken cancellationToken = default)
     {
@@ -27,6 +32,7 @@ public sealed class CommentService(ICommentRepository repository, IProfanityClie
         };
 
         await repository.CreateAsync(comment, cancellationToken);
+        await commentCache.RemoveCommentsAsync(comment.ArticleId, cancellationToken);
         return Map(comment);
     }
 
@@ -38,8 +44,23 @@ public sealed class CommentService(ICommentRepository repository, IProfanityClie
 
     public async Task<IReadOnlyList<CommentResponseDto>> GetByArticleAsync(string articleId, bool includePending, CancellationToken cancellationToken = default)
     {
-        var comments = await repository.GetByArticleAsync(articleId, includePending, cancellationToken);
-        return comments.Select(Map).ToList();
+        var cachedComments = await commentCache.GetCommentsAsync(articleId, cancellationToken);
+        if (cachedComments is not null)
+        {
+            return FilterForCaller(cachedComments, includePending).Select(Map).ToList();
+        }
+
+        var comments = await repository.GetByArticleAsync(articleId, includePending: true, cancellationToken);
+        await commentCache.SetCommentsAsync(articleId, comments, cancellationToken);
+        return FilterForCaller(comments, includePending).Select(Map).ToList();
+    }
+
+    private static IReadOnlyList<Comment> FilterForCaller(IReadOnlyList<Comment> comments, bool includePending)
+    {
+        if (includePending)
+            return comments;
+
+        return comments.Where(comment => comment.ModerationStatus == ModerationStatuses.Published).ToList();
     }
 
     private static CommentResponseDto Map(Comment comment) => new()

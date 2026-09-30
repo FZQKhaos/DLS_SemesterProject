@@ -1,3 +1,4 @@
+using CommentService.Cache;
 using CommentService.Client.Interface;
 using CommentService.Data.Interface;
 
@@ -37,6 +38,7 @@ public sealed class PendingModerationWorker(
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ICommentRepository>();
         var profanityClient = scope.ServiceProvider.GetRequiredService<IProfanityClient>();
+        var commentCache = scope.ServiceProvider.GetRequiredService<ICommentCache>();
         var pending = await repository.GetPendingAsync(batchSize, cancellationToken);
 
         foreach (var comment in pending)
@@ -49,6 +51,7 @@ public sealed class PendingModerationWorker(
             }
 
             await repository.MarkPublishedAsync(comment.Id, result.FilteredText, cancellationToken);
+            await commentCache.RemoveCommentsAsync(comment.ArticleId, cancellationToken);
             logger.LogInformation("Comment {CommentId} moved from pending to published.", comment.Id);
         }
     }
