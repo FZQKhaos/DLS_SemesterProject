@@ -7,4 +7,5 @@ public sealed class ArticlePublished
     public required string Title { get; set; }
     public required string Body { get; set; }
     public required string Continent { get; set; }
+    public required DateTime PublishedAtUtc { get; set; }
 }

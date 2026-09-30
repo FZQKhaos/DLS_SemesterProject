@@ -11,8 +11,8 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
     {
         using var connection = coordinator.GetConnectionForContinent(article.Continent);
         using var cmd = new NpgsqlCommand(
-            @"INSERT INTO articles (id, title, body, continent)
-              VALUES (@id, @title, @body, @continent)
+            @"INSERT INTO articles (id, title, body, continent, published_at)
+              VALUES (@id, @title, @body, @continent, @published_at)
               RETURNING id;",
             connection);
 
@@ -20,6 +20,7 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
         cmd.Parameters.AddWithValue("title", article.Title);
         cmd.Parameters.AddWithValue("body", article.Body);
         cmd.Parameters.AddWithValue("continent", article.Continent);
+        cmd.Parameters.AddWithValue("published_at", article.PublishedAtUtc);
 
         await cmd.ExecuteScalarAsync();
 
@@ -30,8 +31,8 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
     {
         using var connection = coordinator.GetConnectionForContinent(article.Continent);
         using var cmd = new NpgsqlCommand(
-            @"INSERT INTO articles (id, title, body, continent)
-              VALUES (@id, @title, @body, @continent)
+            @"INSERT INTO articles (id, title, body, continent, published_at)
+              VALUES (@id, @title, @body, @continent, @published_at)
               ON CONFLICT (id) DO NOTHING;",
             connection);
 
@@ -39,6 +40,7 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
         cmd.Parameters.AddWithValue("title", article.Title);
         cmd.Parameters.AddWithValue("body", article.Body);
         cmd.Parameters.AddWithValue("continent", article.Continent);
+        cmd.Parameters.AddWithValue("published_at", article.PublishedAtUtc);
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -47,7 +49,7 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
     {
         using var connection = coordinator.GetConnectionForContinent(continent);
         using var cmd = new NpgsqlCommand(
-            @"SELECT id, title, body, continent
+            @"SELECT id, title, body, continent, published_at
               FROM articles
               WHERE id = @id AND continent = @continent;",
             connection);
@@ -64,7 +66,8 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
             Id = reader.GetString(0),
             Title = reader.GetString(1),
             Body = reader.GetString(2),
-            Continent = reader.GetString(3)
+            Continent = reader.GetString(3),
+            PublishedAtUtc = reader.GetDateTime(4)
         };
     }
 
@@ -75,7 +78,7 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
             @"UPDATE articles
               SET title = @title, body = @body
               WHERE id = @id AND continent = @continent
-              RETURNING id, title, body, continent;",
+              RETURNING id, title, body, continent, published_at;",
             connection);
 
         cmd.Parameters.AddWithValue("id", id);
@@ -92,7 +95,8 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
             Id = reader.GetString(0),
             Title = reader.GetString(1),
             Body = reader.GetString(2),
-            Continent = reader.GetString(3)
+            Continent = reader.GetString(3),
+            PublishedAtUtc = reader.GetDateTime(4)
         };
     }
 

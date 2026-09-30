@@ -63,7 +63,8 @@ public sealed class ArticlePublishedSubscriber(
                     Id = message.Id,
                     Title = message.Title,
                     Body = message.Body,
-                    Continent = message.Continent
+                    Continent = message.Continent,
+                    PublishedAtUtc = message.PublishedAtUtc
                 },
                 cancellationToken);
 

@@ -18,7 +18,8 @@ public class ArticleService(IArticleRepository repo) : IArticleService
             Id = id,
             Title = dto.Title,
             Body = dto.Body,
-            Continent = dto.Continent
+            Continent = dto.Continent,
+            PublishedAtUtc = DateTime.UtcNow
         };
         
         var createdArticle = await repo.CreateArticle(article);

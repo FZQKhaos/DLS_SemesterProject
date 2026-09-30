@@ -15,4 +15,7 @@ public sealed class Article
     
     [Required]
     public string Continent { get; set; }
+
+    [Required]
+    public DateTime PublishedAtUtc { get; set; }
 }

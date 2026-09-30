@@ -22,7 +22,8 @@ public sealed class ArticleQueuePublisher(IBus bus)
             Id = article.Id,
             Title = article.Title,
             Body = article.Body,
-            Continent = article.Continent
+            Continent = article.Continent,
+            PublishedAtUtc = DateTime.UtcNow
         };
         Propagator.Inject(
             new PropagationContext(activity?.Context ?? Activity.Current?.Context ?? default, Baggage.Current),
