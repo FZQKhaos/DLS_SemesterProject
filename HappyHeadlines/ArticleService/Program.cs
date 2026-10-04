@@ -23,6 +23,8 @@ public class Program
         builder.Services.AddScoped<Coordinator>();
         builder.Services.AddScoped<IArticleService, Service.ArticleService>();
         builder.Services.AddScoped<IArticleRepository, ArticleRepository>();
+        // ArticleService uses Redis only for the global ArticleCache read path. Regional
+        // article requests continue to use their own partitioned databases directly.
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
         {
             var connectionString = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
@@ -32,6 +34,8 @@ public class Program
             options.SyncTimeout = 5000;
             return ConnectionMultiplexer.Connect(options);
         });
+        // RedisArticleCache records hits/misses for global article lookups, while the
+        // separate ArticleCacheWorker remains responsible for populating cached articles.
         builder.Services.AddSingleton<IArticleCache, RedisArticleCache>();
 
         var rabbitMqConnectionString = builder.Configuration["RabbitMq:ConnectionString"]

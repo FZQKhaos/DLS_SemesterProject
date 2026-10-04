@@ -51,6 +51,10 @@ public sealed class PendingModerationWorker(
             }
 
             await repository.MarkPublishedAsync(comment.Id, result.FilteredText, cancellationToken);
+            // Publishing changes what should appear in article comment lists. Removing
+            // the cached entry prevents Redis from serving the older list where this
+            // comment was still pending. The next request rebuilds the cache from the
+            // database instead of trying to patch the JSON payload in place.
             await commentCache.RemoveCommentsAsync(comment.ArticleId, cancellationToken);
             logger.LogInformation("Comment {CommentId} moved from pending to published.", comment.Id);
         }

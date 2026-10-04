@@ -6,6 +6,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 {
     var connectionString = builder.Configuration["Redis:ConnectionString"] ?? "redis:6379";
     var options = ConfigurationOptions.Parse(connectionString);
+    // The dashboard reads metrics from Redis, the shared place where both services
+    // increment cache hit/miss counters.
     options.AbortOnConnectFail = false;
     options.ConnectTimeout = 5000;
     options.SyncTimeout = 5000;
@@ -16,6 +18,9 @@ var app = builder.Build();
 
 app.MapGet("/", async (IConnectionMultiplexer connectionMultiplexer) =>
 {
+    // The dashboard intentionally reports simple cache effectiveness metrics only.
+    // It does not introduce new monitoring infrastructure; it reads the counters that
+    // the cache implementations already maintain.
     var articleStats = await GetStatsAsync(connectionMultiplexer, "metrics:article-cache:hits", "metrics:article-cache:misses");
     var commentStats = await GetStatsAsync(connectionMultiplexer, "metrics:comment-cache:hits", "metrics:comment-cache:misses");
 
@@ -70,6 +75,15 @@ static async Task<CacheStats> GetStatsAsync(IConnectionMultiplexer connectionMul
     var hits = await GetLongAsync(database, hitsKey);
     var misses = await GetLongAsync(database, missesKey);
     var total = hits + misses;
+    // Cache hit ratio:
+    // Hits are requests served from cache. Misses are successful cache lookups where
+    // the data was absent. HitRatio = Hits / (Hits + Misses) * 100.
+    //
+    // If there have been no lookups, the ratio is reported as 0 to avoid division by
+    // zero. A high ratio usually means lower database load, lower latency, and better
+    // tolerance of backing database slowness, but it is not a complete performance
+    // measure. Trade-offs still include Redis memory use, stale data, invalidation
+    // complexity, and data freshness.
     var hitRatio = total == 0 ? 0d : (double)hits / total * 100d;
     return new CacheStats(hits, misses, total, hitRatio);
 }
