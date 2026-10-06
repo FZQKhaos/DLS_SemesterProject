@@ -1,3 +1,4 @@
+using CommentService.Cache;
 using CommentService.Client.Interface;
 using CommentService.Data.Interface;
 
@@ -37,6 +38,7 @@ public sealed class PendingModerationWorker(
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ICommentRepository>();
         var profanityClient = scope.ServiceProvider.GetRequiredService<IProfanityClient>();
+        var commentCache = scope.ServiceProvider.GetRequiredService<ICommentCache>();
         var pending = await repository.GetPendingAsync(batchSize, cancellationToken);
 
         foreach (var comment in pending)
@@ -49,6 +51,11 @@ public sealed class PendingModerationWorker(
             }
 
             await repository.MarkPublishedAsync(comment.Id, result.FilteredText, cancellationToken);
+            // Publishing changes what should appear in article comment lists. Removing
+            // the cached entry prevents Redis from serving the older list where this
+            // comment was still pending. The next request rebuilds the cache from the
+            // database instead of trying to patch the JSON payload in place.
+            await commentCache.RemoveCommentsAsync(comment.ArticleId, cancellationToken);
             logger.LogInformation("Comment {CommentId} moved from pending to published.", comment.Id);
         }
     }

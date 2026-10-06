@@ -1,4 +1,4 @@
-﻿services:
+services:
   africa-db:
     image: postgres:16-alpine
     environment:
@@ -95,6 +95,24 @@
       - ./ArticleService/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks: [article-data]
 
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    networks: [article-data, monitoring]
+
+  article-cache-worker:
+    build:
+      context: .
+      dockerfile: ArticleCacheWorker/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Redis__ConnectionString: redis:6379
+      ArticleCache__RefreshIntervalSeconds: 300
+    depends_on:
+      - global-db
+      - redis
+    networks: [article-data]
+
   article-service-1:
     build:
       context: .
@@ -102,8 +120,13 @@
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
+      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
     ports: ["8081:8080"]
-    networks: [article-data, article-edge]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks: [article-data, article-edge, publisher-edge, monitoring]
 
   article-service-2:
     build:
@@ -112,8 +135,13 @@
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
+      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
     ports: ["8082:8080"]
-    networks: [article-data, article-edge]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks: [article-data, article-edge, publisher-edge, monitoring]
 
   article-service-3:
     build:
@@ -122,8 +150,13 @@
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
+      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
     ports: ["8083:8080"]
-    networks: [article-data, article-edge]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks: [article-data, article-edge, publisher-edge, monitoring]
 
   lb:
     image: nginx:alpine
@@ -208,10 +241,28 @@
         condition: service_healthy
       profanity-service:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - comment-data
       - moderation-link
       - comment-edge
+      - monitoring
+
+  cache-dashboard:
+    build:
+      context: .
+      dockerfile: CacheDashboard/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Redis__ConnectionString: redis:6379
+    ports:
+      - "7000:8080"
+    depends_on:
+      - redis
+    networks:
+      - monitoring
 
   draft-db:
     image: postgres:16-alpine
@@ -251,6 +302,40 @@
       - draft-edge
       - monitoring
 
+  publisher-service:
+    build:
+      context: .
+      dockerfile: PublisherService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
+    ports:
+      - "8085:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - publisher-edge
+      - monitoring
+
+  newsletter-service:
+    build:
+      context: .
+      dockerfile: NewsletterService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
+    ports:
+      - "8086:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - publisher-edge
+      - monitoring
+
   seq:
     image: datalust/seq
     ports:
@@ -263,6 +348,22 @@
       SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
     networks:
       - monitoring
+
+  rabbitmq:
+    image: rabbitmq:management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: appuser
+      RABBITMQ_DEFAULT_PASS: apppassword
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - publisher-edge
 
   zipkin:
     image: openzipkin/zipkin
@@ -305,3 +406,4 @@ networks:
     internal: true
 
   draft-edge:
+  publisher-edge:

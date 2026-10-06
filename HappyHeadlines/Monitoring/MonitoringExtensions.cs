@@ -24,6 +24,7 @@ public static class MonitoringExtensions
                 resource.AddService(serviceName))
             .WithTracing(tracing =>
             {
+                tracing.AddAspNetCoreInstrumentation();
                 tracing.AddSource(ActivitySource.Name).SetSampler(new AlwaysOnSampler());
                 tracing.AddConsoleExporter();
                 tracing.AddZipkinExporter(options =>

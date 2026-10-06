@@ -1,4 +1,5 @@
 using System.Net;
+using CommentService.Cache;
 using CommentService.Client;
 using CommentService.Client.Interface;
 using CommentService.Data;
@@ -8,6 +9,7 @@ using CommentService.Worker;
 using Npgsql;
 using Polly;
 using Polly.Extensions.Http;
+using StackExchange.Redis;
 
 namespace CommentService;
 
@@ -25,6 +27,20 @@ public class Program
         var commentConnectionString = builder.Configuration.GetConnectionString("CommentDatabase")
             ?? throw new InvalidOperationException("ConnectionStrings:CommentDatabase is missing.");
         builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(commentConnectionString));
+        // CommentService uses Redis for cache-aside comment lists and LRU state. Redis
+        // improves repeated reads, while CommentDatabase remains the source of truth.
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var connectionString = builder.Configuration["Redis:ConnectionString"] ?? "redis:6379";
+            var options = ConfigurationOptions.Parse(connectionString);
+            options.AbortOnConnectFail = false;
+            options.ConnectTimeout = 5000;
+            options.SyncTimeout = 5000;
+            return ConnectionMultiplexer.Connect(options);
+        });
+        // The cache stores all comments for each of the 30 most recently accessed
+        // articles; CommentService filters pending comments after loading the cached set.
+        builder.Services.AddSingleton<ICommentCache, RedisCommentCache>();
         builder.Services.AddScoped<ICommentRepository, CommentRepository>();
         builder.Services.AddScoped<ICommentService, Service.CommentService>();
 

@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Data.Common;
 using Npgsql;
 
@@ -48,8 +48,14 @@ public class Coordinator()
 
     private NpgsqlConnection GetConnectionByName(string dbName)
     {
-        if (connCache.TryGetValue(dbName, out var connection))
+        if (connCache.TryGetValue(dbName, out var connection) && connection is not null && connection.State == ConnectionState.Open)
             return connection;
+
+        if (connCache.TryGetValue(dbName, out connection) && connection is not null)
+        {
+            connection.Dispose();
+            connCache.Remove(dbName);
+        }
 
         connection = new NpgsqlConnection(
             $"Host={dbName};Database={dbName};Username=appuser;Password=secret123");
