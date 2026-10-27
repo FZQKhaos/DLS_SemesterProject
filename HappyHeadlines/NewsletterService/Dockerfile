@@ -13,8 +13,6 @@ COPY ["Monitoring/Monitoring.csproj", "Monitoring/"]
 RUN dotnet restore "NewsletterService/NewsletterService.csproj"
 COPY . .
 WORKDIR "/src/NewsletterService"
-RUN dotnet build "./NewsletterService.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./NewsletterService.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false

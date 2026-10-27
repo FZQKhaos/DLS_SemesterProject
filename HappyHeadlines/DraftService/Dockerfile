@@ -11,8 +11,6 @@ COPY ["DraftService/DraftService.csproj", "DraftService/"]
 RUN dotnet restore "DraftService/DraftService.csproj"
 COPY . .
 WORKDIR "/src/DraftService"
-RUN dotnet build "./DraftService.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./DraftService.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false

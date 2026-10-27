@@ -9,8 +9,6 @@ COPY ["CacheDashboard/CacheDashboard.csproj", "CacheDashboard/"]
 RUN dotnet restore "CacheDashboard/CacheDashboard.csproj"
 COPY . .
 WORKDIR "/src/CacheDashboard"
-RUN dotnet build "CacheDashboard.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "CacheDashboard.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
