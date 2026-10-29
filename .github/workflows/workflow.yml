@@ -1,0 +1,70 @@
+name: Build and publish
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+        
+      - name: Build solution
+        run: dotnet build HappyHeadlines.sln --configuration Release
+        working-directory: ./HappyHeadlines
+  
+  publish-images:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy: 
+      matrix:
+        include:
+          - image: article-service
+            dockerfile: ArticleService/Dockerfile
+          - image: comment-service
+            dockerfile: CommentService/Dockerfile
+          - image: profanity-service
+            dockerfile: ProfanityService/Dockerfile
+          - image: draft-service
+            dockerfile: DraftService/Dockerfile
+          - image: publisher-service
+            dockerfile: PublisherService/Dockerfile
+          - image: newsletter-service
+            dockerfile: NewsletterService/Dockerfile
+          - image: article-cache-worker
+            dockerfile: ArticleCacheWorker/Dockerfile
+          - image: cache-dashboard
+            dockerfile: CacheDashboard/Dockerfile
+            
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase registry owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./HappyHeadlines
+          file: ./HappyHeadlines/${{ matrix.dockerfile }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ steps.owner.outputs.name }}/happyheadlines-${{ matrix.image }}:${{ github.run_number }}

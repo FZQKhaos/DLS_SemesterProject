@@ -11,11 +11,9 @@ COPY ["Events/Events.csproj", "Events/"]
 RUN dotnet restore "ArticleCacheWorker/ArticleCacheWorker.csproj"
 COPY . .
 WORKDIR "/src/ArticleCacheWorker"
-RUN dotnet build "ArticleCacheWorker.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "ArticleCacheWorker.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "ArticleCacheWorker.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false -m:1
 
 FROM base AS final
 WORKDIR /app
