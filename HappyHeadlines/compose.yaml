@@ -319,6 +319,8 @@ services:
       - publisher-edge
       - monitoring
 
+  # Note: no depends_on on the subscriber lane. NewsletterService must be able to start
+  # even when the whole subscriber lane is down (fault isolation).
   newsletter-service:
     build:
       context: .
@@ -327,6 +329,13 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
+      SubscriberQueue__ConnectionString: host=subscriber-queue;username=appuser;password=apppassword
+      SubscriberService__BaseUrl: http://subscriber-service:8080
+      SubscriberService__TimeoutSeconds: 2
+      SubscriberService__CircuitBreakerFailures: 3
+      SubscriberService__CircuitBreakerSeconds: 30
+      FeatureHub__EdgeUrl: http://featurehub:8085
+      FeatureHub__ApiKey: ${FEATUREHUB_API_KEY:-}
     ports:
       - "8086:8080"
     depends_on:
@@ -335,6 +344,82 @@ services:
     networks:
       - publisher-edge
       - monitoring
+      - subscriber-bus
+      - subscriber-api
+      - featurehub-net
+
+  # ===== Subscriber swim lane =====================================
+  # subscriber-db has no ports: only members of subscriber-data (the service) can reach it.
+  subscriber-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: subscriber-db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    volumes:
+      - subscriber_data:/var/lib/postgresql/data
+      - ./SubscriberService/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d subscriber-db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - subscriber-data
+
+  # Its own RabbitMQ broker, separate from the ArticlePublished broker, so the two lanes
+  # do not share a component.
+  subscriber-queue:
+    image: rabbitmq:management
+    environment:
+      RABBITMQ_DEFAULT_USER: appuser
+      RABBITMQ_DEFAULT_PASS: apppassword
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - subscriber-bus
+
+  # No depends_on featurehub: the toggle server is a control plane, not a startup dependency.
+  subscriber-service:
+    build:
+      context: .
+      dockerfile: SubscriberService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__SubscriberDatabase: Host=subscriber-db;Database=subscriber-db;Username=appuser;Password=secret123
+      RabbitMq__ConnectionString: host=subscriber-queue;username=appuser;password=apppassword
+      FeatureHub__EdgeUrl: http://featurehub:8085
+      FeatureHub__ApiKey: ${FEATUREHUB_API_KEY:-}
+    ports:
+      - "8087:8080"
+    depends_on:
+      subscriber-db:
+        condition: service_healthy
+      subscriber-queue:
+        condition: service_healthy
+    networks:
+      - subscriber-data
+      - subscriber-bus
+      - subscriber-api
+      - featurehub-net
+      - monitoring
+
+  # ===== Release toggle server ====================================
+  featurehub:
+    image: featurehub/party-server:latest
+    ports:
+      - "8088:8085"   # host 8088 -> container 8085 (host 8085 is used by publisher-service)
+    volumes:
+      - featurehub_data:/db
+    networks:
+      - featurehub-net
 
   seq:
     image: datalust/seq
@@ -385,6 +470,8 @@ volumes:
   profanity_data:
   draft_data:
   rps_seq_data:
+  subscriber_data:
+  featurehub_data:
 
 networks:
   article-data:
@@ -407,3 +494,11 @@ networks:
 
   draft-edge:
   publisher-edge:
+
+  # Subscriber swim lane
+  subscriber-data:
+    internal: true
+  subscriber-bus:
+  subscriber-api:
+    internal: true
+  featurehub-net:

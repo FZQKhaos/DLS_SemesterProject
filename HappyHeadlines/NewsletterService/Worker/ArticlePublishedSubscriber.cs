@@ -2,7 +2,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using EasyNetQ;
 using Events;
+using FeatureToggles;
+using Microsoft.Extensions.DependencyInjection;
 using Monitoring;
+using NewsletterService.Client;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 
@@ -10,6 +13,8 @@ namespace NewsletterService.Worker;
 
 public sealed class ArticlePublishedSubscriber(
     IBus bus,
+    IServiceScopeFactory scopeFactory,
+    IFeatureToggles toggles,
     ILogger<ArticlePublishedSubscriber> logger) : IHostedService
 {
     private const string SubscriptionId = "NewsletterService";
@@ -31,7 +36,7 @@ public sealed class ArticlePublishedSubscriber(
         return Task.CompletedTask;
     }
 
-    private Task HandleMessageAsync(ArticlePublished message, CancellationToken cancellationToken)
+    private async Task HandleMessageAsync(ArticlePublished message, CancellationToken cancellationToken)
     {
         var parentContext = Propagator.Extract(
             default,
@@ -55,7 +60,41 @@ public sealed class ArticlePublishedSubscriber(
                 "Received article {ArticleId} for newsletter processing: {Title}.",
                 message.Id,
                 message.Title);
-            return Task.CompletedTask;
+
+            // TOGGLE POINT 2: is the subscriber feature switched on? Evaluated for EVERY message.
+            if (!toggles.IsEnabled(FeatureKeys.SubscriberService))
+            {
+                logger.LogInformation(
+                    "Subscriber feature is OFF; skipping newsletter for article {ArticleId}.",
+                    message.Id);
+                return;
+            }
+
+            using var scope = scopeFactory.CreateScope();
+            var client = scope.ServiceProvider.GetRequiredService<ISubscriberClient>();
+            var subscribers = await client.GetSubscribersAsync(cancellationToken);
+
+            if (subscribers is null)
+            {
+                // DEGRADED MODE: the subscriber lane is unavailable. The failure stops here.
+                logger.LogWarning(
+                    "SubscriberService unavailable; newsletter for article {ArticleId} skipped (degraded mode).",
+                    message.Id);
+                return;
+            }
+
+            foreach (var subscriber in subscribers)
+            {
+                logger.LogInformation(
+                    "Newsletter for article {ArticleId} sent to subscriber {SubscriberId}.",
+                    message.Id,
+                    subscriber.Id);
+            }
+
+            logger.LogInformation(
+                "Newsletter for article {ArticleId} sent to {Count} subscribers.",
+                message.Id,
+                subscribers.Count);
         }
         catch (Exception exception)
         {

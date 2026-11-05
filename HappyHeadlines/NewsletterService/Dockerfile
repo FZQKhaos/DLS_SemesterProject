@@ -10,6 +10,7 @@ WORKDIR /src
 COPY ["NewsletterService/NewsletterService.csproj", "NewsletterService/"]
 COPY ["Events/Events.csproj", "Events/"]
 COPY ["Monitoring/Monitoring.csproj", "Monitoring/"]
+COPY ["FeatureToggles/FeatureToggles.csproj", "FeatureToggles/"]
 RUN dotnet restore "NewsletterService/NewsletterService.csproj"
 COPY . .
 WORKDIR "/src/NewsletterService"
