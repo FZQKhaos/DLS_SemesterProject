@@ -331,14 +331,80 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
+      SubscriberQueue__ConnectionString: host=subscriber-rabbitmq;username=appuser;password=apppassword
+      Redis__ConnectionString: redis:6379
+      FeatureFlags__AdminKey: ${FEATURE_FLAGS_ADMIN_KEY:?Export FEATURE_FLAGS_ADMIN_KEY first}
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__From: ${SMTP_FROM:-}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
     ports:
       - "8086:8080"
     depends_on:
       rabbitmq:
         condition: service_healthy
+      subscriber-rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - publisher-edge
+      - subscriber-queue
       - monitoring
+
+  subscriber-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: subscribers
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret123
+    volumes:
+      - subscriber_data:/var/lib/postgresql/data
+      - ./SubscriberService/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d subscribers"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [subscriber-data]
+
+  subscriber-rabbitmq:
+    image: rabbitmq:management
+    environment:
+      RABBITMQ_DEFAULT_USER: appuser
+      RABBITMQ_DEFAULT_PASS: apppassword
+    ports: ["15673:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [subscriber-queue]
+
+  subscriber-service:
+    build:
+      context: .
+      dockerfile: SubscriberService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__SubscriberDatabase: Host=subscriber-db;Database=subscribers;Username=appuser;Password=secret123
+      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
+      SubscriberQueue__ConnectionString: host=subscriber-rabbitmq;username=appuser;password=apppassword
+      Redis__ConnectionString: redis:6379
+    ports: ["8087:8080"]
+    depends_on:
+      subscriber-db:
+        condition: service_healthy
+      subscriber-rabbitmq:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [subscriber-data, subscriber-queue, publisher-edge, monitoring]
 
   seq:
     image: datalust/seq
@@ -380,6 +446,7 @@ volumes:
   comment_data:
   profanity_data:
   draft_data:
+  subscriber_data:
   rps_seq_data:
 
 networks:
@@ -394,6 +461,10 @@ networks:
     internal: true
   monitoring:
   
+  subscriber-data:
+    internal: true
+  subscriber-queue:
+    internal: true
   comment-edge:
 
   profanity-edge:

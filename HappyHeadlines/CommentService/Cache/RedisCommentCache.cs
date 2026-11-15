@@ -134,18 +134,17 @@ public sealed class RedisCommentCache(
 
     private async Task EnforceLruLimitAsync()
     {
-        var members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
-        while (members.Length > MaxArticles)
+        // GAF: Avoid Unnecessary Resources. Fetch a scalar count, not a whole
+        // list of up to 31 Redis members on every cache insertion.
+        var count = await database.SortedSetLengthAsync(LruKey);
+        while (count > MaxArticles)
         {
-            // The smallest score is the least recently used article. If articles 1-30
-            // are cached, article 1 is accessed again, and article 31 arrives, article 2
-            // should be evicted because article 1's score was refreshed by access.
-            var oldest = members[0];
-            await database.SortedSetRemoveAsync(LruKey, oldest);
-            // Eviction must remove the payload as well as the Sorted Set entry; otherwise
-            // old comment lists could remain in Redis outside the 30-article capacity.
-            await database.KeyDeleteAsync(BuildArticleKey(oldest.ToString()));
-            members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
+            // Only fetch the least recently used ID when eviction is necessary.
+            var oldest = await database.SortedSetRangeByRankAsync(LruKey, 0, 0, Order.Ascending);
+            if (oldest.Length == 0) break;
+            await database.SortedSetRemoveAsync(LruKey, oldest[0]);
+            await database.KeyDeleteAsync(BuildArticleKey(oldest[0].ToString()));
+            count--;
         }
     }
 

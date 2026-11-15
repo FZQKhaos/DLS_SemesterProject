@@ -28,6 +28,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NewsletterService", "Newsle
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArticleCacheWorker", "ArticleCacheWorker\ArticleCacheWorker.csproj", "{69E73957-28FD-4ABF-ACCB-647BF314AFBF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubscriberService", "SubscriberService\SubscriberService.csproj", "{782E4928-4B53-49B4-BCA5-E63257017152}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,6 +40,18 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x64.Build.0 = Debug|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x86.Build.0 = Debug|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|Any CPU.Build.0 = Release|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x64.ActiveCfg = Release|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x64.Build.0 = Release|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x86.ActiveCfg = Release|Any CPU
+		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x86.Build.0 = Release|Any CPU
 		{AEB4ABDC-B0E9-4FCF-B208-6B142FE6AC27}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{AEB4ABDC-B0E9-4FCF-B208-6B142FE6AC27}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AEB4ABDC-B0E9-4FCF-B208-6B142FE6AC27}.Debug|x64.ActiveCfg = Debug|Any CPU
