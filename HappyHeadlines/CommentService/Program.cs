@@ -1,3 +1,4 @@
+using Monitoring;
 using System.Net;
 using CommentService.Cache;
 using CommentService.Client;
@@ -18,6 +19,7 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        builder.AddMonitoring("CommentService");
 
         builder.Services.AddControllers();
         builder.Services.AddEndpointsApiExplorer();
@@ -81,6 +83,7 @@ public class Program
         builder.Services.AddHostedService<PendingModerationWorker>();
 
         var app = builder.Build();
+        app.UseHappyHeadlinesRequestLogging();
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();

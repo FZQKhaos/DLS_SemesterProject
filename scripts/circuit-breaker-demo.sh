@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMMENT_URL="${COMMENT_URL:-http://localhost:6000}"
+COMMENT_URL="${COMMENT_URL:-http://localhost:6002}"
 
 printf '\n1) Stopping ProfanityService...\n'
 docker compose stop profanity-service

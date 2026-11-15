@@ -4,7 +4,8 @@ using Monitoring;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddMonitoring("PublisherService");
-builder.Services.AddControllers();
+builder.Services.AddHealthChecks();
+        builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -16,6 +17,7 @@ builder.Services.AddSingleton<PublisherService.Service.ArticleQueuePublisher>();
 builder.Services.AddScoped<PublisherService.Service.PublisherService>();
 
 var app = builder.Build();
+        app.UseHappyHeadlinesRequestLogging();
 
 if (app.Environment.IsDevelopment())
 {
@@ -24,4 +26,5 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
-app.Run();
+app.MapHealthChecks("/health");
+        app.Run();

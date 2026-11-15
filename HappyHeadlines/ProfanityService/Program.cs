@@ -1,3 +1,4 @@
+using Monitoring;
 using Npgsql;
 using ProfanityService.Data;
 using ProfanityService.Data.Interface;
@@ -10,6 +11,7 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        builder.AddMonitoring("ProfanityService");
         builder.Services.AddControllers();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
@@ -22,6 +24,7 @@ public class Program
         builder.Services.AddScoped<IProfanityService, Service.ProfanityService>();
 
         var app = builder.Build();
+        app.UseHappyHeadlinesRequestLogging();
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();

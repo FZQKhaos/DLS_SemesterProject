@@ -1,9 +1,10 @@
+using Monitoring;
 using ArticleService.Cache;
 using ArticleService.Data.Interface;
 using ArticleService.Domain;
 
 public sealed class ArticleCacheWorker(
-    IArticleRepository articleRepository,
+    IServiceScopeFactory scopeFactory,
     IArticleCache articleCache,
     ILogger<ArticleCacheWorker> logger,
     IConfiguration configuration) : BackgroundService
@@ -40,8 +41,11 @@ public sealed class ArticleCacheWorker(
 
     private async Task RefreshCacheAsync(CancellationToken stoppingToken)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.cache.refresh");
         try
         {
+            using var scope = scopeFactory.CreateScope();
+            var articleRepository = scope.ServiceProvider.GetRequiredService<IArticleRepository>();
             // The worker scans the global article source for the retention window and
             // refreshes Redis with recent global articles. Keeping these close to the
             // application can improve latency, reduce database load, and keep reads
@@ -72,6 +76,7 @@ public sealed class ArticleCacheWorker(
                 writtenCount++;
             }
 
+            activity?.SetTag("article.cache.loaded_count", writtenCount);
             logger.LogInformation("Loaded {ArticleCount} global articles into the article cache.", writtenCount);
         }
         catch (Exception exception)

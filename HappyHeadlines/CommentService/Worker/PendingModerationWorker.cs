@@ -1,3 +1,4 @@
+using Monitoring;
 using CommentService.Cache;
 using CommentService.Client.Interface;
 using CommentService.Data.Interface;
@@ -35,6 +36,7 @@ public sealed class PendingModerationWorker(
 
     private async Task ModeratePendingBatch(int batchSize, CancellationToken cancellationToken)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.pending_moderation.batch");
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ICommentRepository>();
         var profanityClient = scope.ServiceProvider.GetRequiredService<IProfanityClient>();
@@ -56,7 +58,12 @@ public sealed class PendingModerationWorker(
             // comment was still pending. The next request rebuilds the cache from the
             // database instead of trying to patch the JSON payload in place.
             await commentCache.RemoveCommentsAsync(comment.ArticleId, cancellationToken);
+            Telemetry.RecordWorkflow("comment.moderation", "published");
             logger.LogInformation("Comment {CommentId} moved from pending to published.", comment.Id);
         }
     }
 }
+
+
+// Potential to do here, too much logs spam every 10 sec. but major rework needs to be done to avoid it while keeping active monitoring.
+// - Johan

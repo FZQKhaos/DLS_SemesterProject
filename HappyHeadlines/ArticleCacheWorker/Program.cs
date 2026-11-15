@@ -1,9 +1,11 @@
+using Monitoring;
 using ArticleService.Cache;
 using ArticleService.Data;
 using ArticleService.Data.Interface;
 using StackExchange.Redis;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.AddMonitoring("ArticleCacheWorker");
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 {

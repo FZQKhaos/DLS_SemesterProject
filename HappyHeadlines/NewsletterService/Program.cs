@@ -19,6 +19,7 @@ builder.Services.AddSingleton<IBus>(_ =>
 builder.Services.AddHostedService<ArticlePublishedSubscriber>();
 
 var app = builder.Build();
+        app.UseHappyHeadlinesRequestLogging();
 
 if (app.Environment.IsDevelopment())
 {

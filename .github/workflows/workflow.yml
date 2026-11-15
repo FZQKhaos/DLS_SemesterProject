@@ -43,8 +43,6 @@ jobs:
             dockerfile: NewsletterService/Dockerfile
           - image: article-cache-worker
             dockerfile: ArticleCacheWorker/Dockerfile
-          - image: cache-dashboard
-            dockerfile: CacheDashboard/Dockerfile
             
     steps:
       - uses: actions/checkout@v4

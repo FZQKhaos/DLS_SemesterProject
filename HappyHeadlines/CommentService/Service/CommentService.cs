@@ -1,3 +1,4 @@
+using Monitoring;
 using CommentService.Cache;
 using CommentService.Client.Interface;
 using CommentService.Data.Interface;
@@ -15,6 +16,7 @@ public sealed class CommentService(
 {
     public async Task<CommentResponseDto> CreateAsync(CommentRequestDto dto, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.create");
         var moderation = await profanityClient.FilterAsync(dto.Body, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var published = moderation.ServiceAvailable;
@@ -32,6 +34,10 @@ public sealed class CommentService(
         };
 
         await repository.CreateAsync(comment, cancellationToken);
+        activity?.SetTag("comment.moderation_status", comment.ModerationStatus);
+        Telemetry.RecordWorkflow("comment.created", comment.ModerationStatus);
+        logger.LogInformation("Created comment {CommentId} for article {ArticleId} with moderation status {ModerationStatus}",
+            comment.Id, comment.ArticleId, comment.ModerationStatus);
         // Cache invalidation avoids stale comment lists. After a new comment is stored,
         // any cached list for the article is no longer complete, so the simple strategy
         // is: remove now, reload from the database on the next cache miss.

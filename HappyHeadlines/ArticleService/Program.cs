@@ -1,4 +1,4 @@
-﻿using ArticleService.Cache;
+using ArticleService.Cache;
 using ArticleService.Data;
 using ArticleService.Data.Interface;
 using ArticleService.Service.Interface;
@@ -18,6 +18,7 @@ public class Program
 
         // Add services to the container.
         builder.AddMonitoring("ArticleService");
+        builder.Services.AddHealthChecks();
         builder.Services.AddControllers();
 
         builder.Services.AddScoped<Coordinator>();
@@ -51,6 +52,7 @@ public class Program
         builder.Services.AddSwaggerGen();
 
         var app = builder.Build();
+        app.UseHappyHeadlinesRequestLogging();
 
         // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())
@@ -63,6 +65,7 @@ public class Program
 
         // app.UseHttpsRedirection();
 
+        app.MapHealthChecks("/health");
         app.Run();
     }
 }
