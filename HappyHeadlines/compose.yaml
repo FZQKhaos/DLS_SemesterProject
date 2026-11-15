@@ -50,6 +50,7 @@ services:
   north-america-db:
     image: postgres:16-alpine
     environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_DB: north-america-db
       POSTGRES_USER: appuser
       POSTGRES_PASSWORD: secret123
@@ -62,6 +63,7 @@ services:
   south-america-db:
     image: postgres:16-alpine
     environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_DB: south-america-db
       POSTGRES_USER: appuser
       POSTGRES_PASSWORD: secret123
@@ -74,6 +76,7 @@ services:
   oceania-db:
     image: postgres:16-alpine
     environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_DB: oceania-db
       POSTGRES_USER: appuser
       POSTGRES_PASSWORD: secret123
