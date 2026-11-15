@@ -52,9 +52,9 @@ public sealed class ArticlePublishedSubscriber(
         try
         {
             logger.LogInformation(
-                "Received article {ArticleId} for newsletter processing: {Title}.",
-                message.Id,
-                message.Title);
+                "Received article {ArticleId} for newsletter processing.",
+                message.Id);
+            Telemetry.RecordWorkflow("newsletter.received", "success");
             return Task.CompletedTask;
         }
         catch (Exception exception)

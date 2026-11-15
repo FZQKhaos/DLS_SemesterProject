@@ -1,3 +1,4 @@
+using Monitoring;
 using System.Text.Json;
 using CommentService.Domain;
 using Microsoft.Extensions.Logging;
@@ -30,13 +31,13 @@ public sealed class RedisCommentCache(
                 // A miss means Redis was reached but no cached payload exists for this
                 // article. Redis outages are handled separately below and should not be
                 // counted as ordinary cache misses.
-                await IncrementMetricAsync("metrics:comment-cache:misses");
+                Telemetry.RecordCacheLookup("comment", "miss");
                 return null;
             }
 
             // A hit means Redis contains the comment payload, including the valid case
             // where that payload is an empty JSON list: [].
-            await IncrementMetricAsync("metrics:comment-cache:hits");
+            Telemetry.RecordCacheLookup("comment", "hit");
             // Accessing an article updates its recency. This is what makes the eviction
             // policy least-recently-used rather than simply oldest article by time.
             await TouchLruAsync(articleId, cancellationToken);
@@ -51,6 +52,7 @@ public sealed class RedisCommentCache(
             // Redis is an optimization layer. If it is unavailable, the service can fall
             // back to CommentDatabase via the null return value instead of making comment
             // reads unusable solely because the cache infrastructure failed.
+            Telemetry.RecordCacheLookup("comment", "unavailable");
             logger.LogError(exception, "Redis comment cache read failed for article {ArticleId}; falling back to database.", articleId);
             return null;
         }
@@ -132,34 +134,17 @@ public sealed class RedisCommentCache(
 
     private async Task EnforceLruLimitAsync()
     {
-        var members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
-        while (members.Length > MaxArticles)
+        // GAF: Avoid Unnecessary Resources. Fetch a scalar count, not a whole
+        // list of up to 31 Redis members on every cache insertion.
+        var count = await database.SortedSetLengthAsync(LruKey);
+        while (count > MaxArticles)
         {
-            // The smallest score is the least recently used article. If articles 1-30
-            // are cached, article 1 is accessed again, and article 31 arrives, article 2
-            // should be evicted because article 1's score was refreshed by access.
-            var oldest = members[0];
-            await database.SortedSetRemoveAsync(LruKey, oldest);
-            // Eviction must remove the payload as well as the Sorted Set entry; otherwise
-            // old comment lists could remain in Redis outside the 30-article capacity.
-            await database.KeyDeleteAsync(BuildArticleKey(oldest.ToString()));
-            members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
-        }
-    }
-
-    private async Task IncrementMetricAsync(string key)
-    {
-        try
-        {
-            // Hits and misses let us calculate hit ratio and discuss whether the cache is
-            // reducing database reads. The counters describe successful cache lookups,
-            // not whether Redis itself was reachable.
-            await database.StringIncrementAsync(key);
-        }
-        catch (RedisException exception)
-        {
-            // Metric failure should not affect the user-facing cache behavior.
-            logger.LogWarning(exception, "Redis metric increment failed for {MetricKey}.", key);
+            // Only fetch the least recently used ID when eviction is necessary.
+            var oldest = await database.SortedSetRangeByRankAsync(LruKey, 0, 0, Order.Ascending);
+            if (oldest.Length == 0) break;
+            await database.SortedSetRemoveAsync(LruKey, oldest[0]);
+            await database.KeyDeleteAsync(BuildArticleKey(oldest[0].ToString()));
+            count--;
         }
     }
 

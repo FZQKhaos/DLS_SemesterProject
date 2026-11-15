@@ -1,3 +1,4 @@
+using Monitoring;
 using Npgsql;
 using ProfanityService.Data.Interface;
 
@@ -7,6 +8,9 @@ public sealed class ProfanityRepository(NpgsqlDataSource dataSource) : IProfanit
 {
     public async Task<IReadOnlyList<string>> GetAllWordsAsync(CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("profanity.db.words");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "SELECT");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand("SELECT word FROM profanity_words ORDER BY LENGTH(word) DESC, word ASC;", connection);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);

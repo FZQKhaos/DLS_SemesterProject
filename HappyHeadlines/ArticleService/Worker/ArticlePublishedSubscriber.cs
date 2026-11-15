@@ -68,6 +68,7 @@ public sealed class ArticlePublishedSubscriber(
                 },
                 cancellationToken);
 
+            Telemetry.RecordWorkflow("article.persisted", "success");
             logger.LogInformation("Stored published article {ArticleId}.", message.Id);
         }
         catch (Exception exception)

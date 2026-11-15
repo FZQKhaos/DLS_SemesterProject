@@ -1,4 +1,5 @@
-﻿using System.Data;
+using Monitoring;
+using System.Data;
 using ArticleService.Data.Interface;
 using ArticleService.Domain;
 using ArticleService.Service.Dto;
@@ -10,6 +11,10 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
 {
     public async Task<Article> CreateArticle(Article article)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.db.insert");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "INSERT");
+        activity?.SetTag("article.continent", article.Continent);
         var connection = coordinator.GetConnectionForContinent(article.Continent);
         if (connection.State != ConnectionState.Open)
             await connection.OpenAsync();
@@ -32,6 +37,10 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
 
     public async Task SavePublishedArticle(Article article, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.db.publish");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "INSERT");
+        activity?.SetTag("article.continent", article.Continent);
         var connection = coordinator.GetConnectionForContinent(article.Continent);
         if (connection.State != ConnectionState.Open)
             await connection.OpenAsync();
@@ -55,6 +64,10 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
         DateTime publishedSinceUtc,
         CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.db.read_recent");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "SELECT");
+        activity?.SetTag("article.continent", continent);
         var connection = coordinator.GetConnectionForContinent(continent);
         if (connection.State != ConnectionState.Open)
             await connection.OpenAsync();
@@ -89,6 +102,10 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
 
     public async Task<Article?> GetArticleByIdAndContinent(string id, string continent)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.db.read");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "SELECT");
+        activity?.SetTag("article.continent", continent);
         var connection = coordinator.GetConnectionForContinent(continent);
         if (connection.State != ConnectionState.Open)
             await connection.OpenAsync();
@@ -117,6 +134,10 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
 
     public async Task<Article?> UpdateArticle(string id, Article article)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.db.update");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "UPDATE");
+        activity?.SetTag("article.continent", article.Continent);
         var connection = coordinator.GetConnectionForContinent(article.Continent);
         if (connection.State != ConnectionState.Open)
             await connection.OpenAsync();
@@ -148,6 +169,10 @@ public class ArticleRepository(Coordinator coordinator) : IArticleRepository
 
     public async Task<bool> DeleteArticle(string id, string continent)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("article.db.delete");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "DELETE");
+        activity?.SetTag("article.continent", continent);
         var connection = coordinator.GetConnectionForContinent(continent);
         if (connection.State != ConnectionState.Open)
             await connection.OpenAsync();

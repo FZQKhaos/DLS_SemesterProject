@@ -1,3 +1,4 @@
+using Monitoring;
 using CommentService.Data.Interface;
 using CommentService.Domain;
 using Npgsql;
@@ -8,6 +9,9 @@ public sealed class CommentRepository(NpgsqlDataSource dataSource) : ICommentRep
 {
     public async Task<Comment> CreateAsync(Comment comment, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.db.insert");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "INSERT");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(@"
             INSERT INTO comments
@@ -29,6 +33,9 @@ public sealed class CommentRepository(NpgsqlDataSource dataSource) : ICommentRep
 
     public async Task<Comment?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.db.read");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "SELECT");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(@"
             SELECT id, article_id, author, original_body, body, moderation_status, created_at, updated_at
@@ -40,6 +47,9 @@ public sealed class CommentRepository(NpgsqlDataSource dataSource) : ICommentRep
 
     public async Task<IReadOnlyList<Comment>> GetByArticleAsync(string articleId, bool includePending, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.db.list");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "SELECT");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var sql = includePending
             ? @"SELECT id, article_id, author, original_body, body, moderation_status, created_at, updated_at
@@ -57,6 +67,9 @@ public sealed class CommentRepository(NpgsqlDataSource dataSource) : ICommentRep
 
     public async Task<IReadOnlyList<Comment>> GetPendingAsync(int limit, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.db.pending");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "SELECT");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(@"
             SELECT id, article_id, author, original_body, body, moderation_status, created_at, updated_at
@@ -73,6 +86,9 @@ public sealed class CommentRepository(NpgsqlDataSource dataSource) : ICommentRep
 
     public async Task<bool> MarkPublishedAsync(string id, string filteredBody, CancellationToken cancellationToken = default)
     {
+        using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.db.publish");
+        activity?.SetTag("db.system", "postgresql");
+        activity?.SetTag("db.operation", "UPDATE");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = new NpgsqlCommand(@"
             UPDATE comments

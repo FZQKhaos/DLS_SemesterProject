@@ -1,3 +1,4 @@
+using Monitoring;
 using ArticleService.Data;
 using ArticleService.Data.Interface;
 using ArticleService.Domain;
@@ -63,6 +64,7 @@ public class ArticleService(IArticleRepository repo, IArticleCache articleCache,
                 // contacted, the database-backed service should still be usable where
                 // possible. This is different from a normal miss, where Redis responded
                 // successfully and the key was simply absent.
+                Telemetry.RecordCacheLookup("article", "unavailable");
                 logger.LogError(exception, "Redis cache read failed for global article {ArticleId}; falling back to database.", id);
             }
         }

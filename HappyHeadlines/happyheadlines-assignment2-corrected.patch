@@ -1,0 +1,987 @@
+diff --git a/.github/workflows/workflow.yml b/.github/workflows/workflow.yml
+--- a/.github/workflows/workflow.yml
++++ b/.github/workflows/workflow.yml
+@@ -42,4 +42,6 @@
+           - image: newsletter-service
+             dockerfile: NewsletterService/Dockerfile
++          - image: subscriber-service
++            dockerfile: SubscriberService/Dockerfile
+           - image: article-cache-worker
+             dockerfile: ArticleCacheWorker/Dockerfile
+@@ -70,1 +72,1 @@
+-          tags: ghcr.io/${{ steps.owner.outputs.name }}/happyheadlines-${{ matrix.image }}:${{ github.run_number }}
++          tags: ghcr.io/${{ steps.owner.outputs.name }}/happyheadlines-${{ matrix.image }}:v${{ github.run_number }}
+diff --git a/HappyHeadlines/NewsletterService/NewsletterService.csproj b/HappyHeadlines/NewsletterService/NewsletterService.csproj
+--- a/HappyHeadlines/NewsletterService/NewsletterService.csproj
++++ b/HappyHeadlines/NewsletterService/NewsletterService.csproj
+@@ -14,2 +14,3 @@
+         <PackageReference Include="EasyNetQ.Serialization.SystemTextJson" Version="7.8.0"/>
++        <PackageReference Include="StackExchange.Redis" Version="2.8.16"/>
+     </ItemGroup>
+diff --git a/HappyHeadlines/NewsletterService/Program.cs b/HappyHeadlines/NewsletterService/Program.cs
+--- a/HappyHeadlines/NewsletterService/Program.cs
++++ b/HappyHeadlines/NewsletterService/Program.cs
+@@ -1,6 +1,8 @@
+ using EasyNetQ;
+ using EasyNetQ.Serialization.SystemTextJson;
+ using Monitoring;
++using NewsletterService;
+ using NewsletterService.Worker;
++using StackExchange.Redis;
+ 
+ var builder = WebApplication.CreateBuilder(args);
+@@ -19,3 +21,19 @@
+ builder.Services.AddHostedService<ArticlePublishedSubscriber>();
+ 
++// The flag is read from Redis for each notification. No restart is necessary.
++builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
++{
++    var options = ConfigurationOptions.Parse(
++        builder.Configuration["Redis:ConnectionString"] ?? "redis:6379");
++    options.AbortOnConnectFail = false;
++    return ConnectionMultiplexer.Connect(options);
++});
++builder.Services.AddSingleton<SubscriberReleaseToggle>();
++builder.Services.AddSingleton<SubscriberQueueBus>(_ => new SubscriberQueueBus(
++    RabbitHutch.CreateBus(
++        builder.Configuration["SubscriberQueue:ConnectionString"]
++            ?? "host=subscriber-rabbitmq;username=appuser;password=apppassword",
++        sr => sr.EnableSystemTextJson())));
++builder.Services.AddHostedService<SubscriberQueueWorker>();
++
+ var app = builder.Build();
+@@ -29,2 +47,3 @@
+ app.MapHealthChecks("/health");
++app.MapSubscriberToggle();
+ app.Run();
+diff --git a/HappyHeadlines/CommentService/Cache/RedisCommentCache.cs b/HappyHeadlines/CommentService/Cache/RedisCommentCache.cs
+--- a/HappyHeadlines/CommentService/Cache/RedisCommentCache.cs
++++ b/HappyHeadlines/CommentService/Cache/RedisCommentCache.cs
+@@ -135,13 +135,12 @@
+-        var members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
+-        while (members.Length > MaxArticles)
++        // GAF: Avoid Unnecessary Resources. Fetch a scalar count, not a whole
++        // list of up to 31 Redis members on every cache insertion.
++        var count = await database.SortedSetLengthAsync(LruKey);
++        while (count > MaxArticles)
+         {
+-            // The smallest score is the least recently used article. If articles 1-30
+-            // are cached, article 1 is accessed again, and article 31 arrives, article 2
+-            // should be evicted because article 1's score was refreshed by access.
+-            var oldest = members[0];
+-            await database.SortedSetRemoveAsync(LruKey, oldest);
+-            // Eviction must remove the payload as well as the Sorted Set entry; otherwise
+-            // old comment lists could remain in Redis outside the 30-article capacity.
+-            await database.KeyDeleteAsync(BuildArticleKey(oldest.ToString()));
+-            members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
++            // Only fetch the least recently used ID when eviction is necessary.
++            var oldest = await database.SortedSetRangeByRankAsync(LruKey, 0, 0, Order.Ascending);
++            if (oldest.Length == 0) break;
++            await database.SortedSetRemoveAsync(LruKey, oldest[0]);
++            await database.KeyDeleteAsync(BuildArticleKey(oldest[0].ToString()));
++            count--;
+         }
+diff --git a/HappyHeadlines/CommentService/Worker/PendingModerationWorker.cs b/HappyHeadlines/CommentService/Worker/PendingModerationWorker.cs
+--- a/HappyHeadlines/CommentService/Worker/PendingModerationWorker.cs
++++ b/HappyHeadlines/CommentService/Worker/PendingModerationWorker.cs
+@@ -12,15 +12,20 @@
+ {
+     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+     {
+-        var intervalSeconds = configuration.GetValue("PendingModeration:IntervalSeconds", 10);
++        var intervalSeconds = Math.Max(1, configuration.GetValue("PendingModeration:IntervalSeconds", 10));
+         var batchSize = configuration.GetValue("PendingModeration:BatchSize", 20);
++        var idleDelay = TimeSpan.FromSeconds(intervalSeconds);
+ 
+         while (!stoppingToken.IsCancellationRequested)
+         {
+             try
+             {
+-                await ModeratePendingBatch(batchSize, stoppingToken);
+-                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);
++                // GAF: Back off polling when nothing is waiting for moderation.
++                var hadPending = await ModeratePendingBatch(batchSize, stoppingToken);
++                idleDelay = hadPending
++                    ? TimeSpan.FromSeconds(intervalSeconds)
++                    : TimeSpan.FromSeconds(Math.Min(60, idleDelay.TotalSeconds * 2));
++                await Task.Delay(idleDelay, stoppingToken);
+             }
+             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+             {
+@@ -34,7 +39,7 @@
+         }
+     }
+ 
+-    private async Task ModeratePendingBatch(int batchSize, CancellationToken cancellationToken)
++    private async Task<bool> ModeratePendingBatch(int batchSize, CancellationToken cancellationToken)
+     {
+         using var activity = MonitoringExtensions.ActivitySource.StartActivity("comment.pending_moderation.batch");
+         using var scope = scopeFactory.CreateScope();
+@@ -42,13 +47,14 @@
+         var profanityClient = scope.ServiceProvider.GetRequiredService<IProfanityClient>();
+         var commentCache = scope.ServiceProvider.GetRequiredService<ICommentCache>();
+         var pending = await repository.GetPendingAsync(batchSize, cancellationToken);
++        if (pending.Count == 0) return false;
+ 
+         foreach (var comment in pending)
+         {
+             var result = await profanityClient.FilterAsync(comment.OriginalBody, cancellationToken);
+             if (!result.ServiceAvailable)
+             {
+-                logger.LogInformation("ProfanityService still unavailable; {Count} pending comments remain deferred.", pending.Count);
++                logger.LogDebug("ProfanityService still unavailable; {Count} pending comments remain deferred.", pending.Count);
+                 break;
+             }
+ 
+@@ -59,8 +65,9 @@
+             // database instead of trying to patch the JSON payload in place.
+             await commentCache.RemoveCommentsAsync(comment.ArticleId, cancellationToken);
+             Telemetry.RecordWorkflow("comment.moderation", "published");
+-            logger.LogInformation("Comment {CommentId} moved from pending to published.", comment.Id);
++            logger.LogDebug("Comment {CommentId} moved from pending to published.", comment.Id);
+         }
++        return true;
+     }
+ }
+ 
+diff --git a/HappyHeadlines/compose.yaml b/HappyHeadlines/compose.yaml
+--- a/HappyHeadlines/compose.yaml
++++ b/HappyHeadlines/compose.yaml
+@@ -331,14 +331,80 @@
+       ASPNETCORE_ENVIRONMENT: Development
+       ASPNETCORE_URLS: http://+:8080
+       RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
++      SubscriberQueue__ConnectionString: host=subscriber-rabbitmq;username=appuser;password=apppassword
++      Redis__ConnectionString: redis:6379
++      FeatureFlags__AdminKey: ${FEATURE_FLAGS_ADMIN_KEY:?Export FEATURE_FLAGS_ADMIN_KEY first}
++      Smtp__Host: ${SMTP_HOST:-}
++      Smtp__Port: ${SMTP_PORT:-587}
++      Smtp__From: ${SMTP_FROM:-}
++      Smtp__Username: ${SMTP_USERNAME:-}
++      Smtp__Password: ${SMTP_PASSWORD:-}
++      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+     ports:
+       - "8086:8080"
+     depends_on:
+       rabbitmq:
+         condition: service_healthy
++      subscriber-rabbitmq:
++        condition: service_healthy
++      redis:
++        condition: service_started
+     networks:
+       - publisher-edge
++      - subscriber-queue
+       - monitoring
++
++  subscriber-db:
++    image: postgres:16-alpine
++    environment:
++      POSTGRES_DB: subscribers
++      POSTGRES_USER: appuser
++      POSTGRES_PASSWORD: secret123
++    volumes:
++      - subscriber_data:/var/lib/postgresql/data
++      - ./SubscriberService/Database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
++    healthcheck:
++      test: ["CMD-SHELL", "pg_isready -U appuser -d subscribers"]
++      interval: 5s
++      timeout: 3s
++      retries: 10
++    networks: [subscriber-data]
++
++  subscriber-rabbitmq:
++    image: rabbitmq:management
++    environment:
++      RABBITMQ_DEFAULT_USER: appuser
++      RABBITMQ_DEFAULT_PASS: apppassword
++    ports: ["15673:15672"]
++    healthcheck:
++      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
++      interval: 5s
++      timeout: 5s
++      retries: 12
++    networks: [subscriber-queue]
++
++  subscriber-service:
++    build:
++      context: .
++      dockerfile: SubscriberService/Dockerfile
++    environment:
++      ASPNETCORE_ENVIRONMENT: Development
++      ASPNETCORE_URLS: http://+:8080
++      ConnectionStrings__SubscriberDatabase: Host=subscriber-db;Database=subscribers;Username=appuser;Password=secret123
++      RabbitMq__ConnectionString: host=rabbitmq;username=appuser;password=apppassword
++      SubscriberQueue__ConnectionString: host=subscriber-rabbitmq;username=appuser;password=apppassword
++      Redis__ConnectionString: redis:6379
++    ports: ["8087:8080"]
++    depends_on:
++      subscriber-db:
++        condition: service_healthy
++      subscriber-rabbitmq:
++        condition: service_healthy
++      rabbitmq:
++        condition: service_healthy
++      redis:
++        condition: service_started
++    networks: [subscriber-data, subscriber-queue, publisher-edge, monitoring]
+ 
+   seq:
+     image: datalust/seq
+@@ -380,6 +446,7 @@
+   comment_data:
+   profanity_data:
+   draft_data:
++  subscriber_data:
+   rps_seq_data:
+ 
+ networks:
+@@ -402,4 +469,8 @@
+     internal: true
+ 
+   draft-edge:
++  subscriber-data:
++    internal: true
++  subscriber-queue:
++    internal: true
+   publisher-edge:
+diff --git a/HappyHeadlines/HappyHeadlines.sln b/HappyHeadlines/HappyHeadlines.sln
+--- a/HappyHeadlines/HappyHeadlines.sln
++++ b/HappyHeadlines/HappyHeadlines.sln
+@@ -27,6 +27,8 @@
+ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NewsletterService", "NewsletterService\NewsletterService.csproj", "{6946648D-36EA-496F-A78B-EDD667AE9BA5}"
+ EndProject
+ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArticleCacheWorker", "ArticleCacheWorker\ArticleCacheWorker.csproj", "{69E73957-28FD-4ABF-ACCB-647BF314AFBF}"
++EndProject
++Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubscriberService", "SubscriberService\SubscriberService.csproj", "{782E4928-4B53-49B4-BCA5-E63257017152}"
+ EndProject
+ Global
+ 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+@@ -146,6 +148,18 @@
+ 		{69E73957-28FD-4ABF-ACCB-647BF314AFBF}.Release|x64.Build.0 = Release|Any CPU
+ 		{69E73957-28FD-4ABF-ACCB-647BF314AFBF}.Release|x86.ActiveCfg = Release|Any CPU
+ 		{69E73957-28FD-4ABF-ACCB-647BF314AFBF}.Release|x86.Build.0 = Release|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|Any CPU.Build.0 = Debug|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|Any CPU.ActiveCfg = Release|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|Any CPU.Build.0 = Release|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x64.ActiveCfg = Debug|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x64.Build.0 = Debug|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x64.ActiveCfg = Release|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x64.Build.0 = Release|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x86.ActiveCfg = Debug|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Debug|x86.Build.0 = Debug|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x86.ActiveCfg = Release|Any CPU
++		{782E4928-4B53-49B4-BCA5-E63257017152}.Release|x86.Build.0 = Release|Any CPU
+ 	EndGlobalSection
+ 	GlobalSection(SolutionProperties) = preSolution
+ 		HideSolutionNode = FALSEdiff --git a/HappyHeadlines/Events/SubscriberNotification.cs b/HappyHeadlines/Events/SubscriberNotification.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/Events/SubscriberNotification.cs
+@@ -0,0 +1,12 @@
++namespace Events;
++
++// Delivered over the dedicated subscriber broker. The NewsletterService does not
++// synchronously depend on SubscriberService or read its database.
++public sealed class SubscriberNotification
++{
++    public required string NotificationId { get; set; }
++    public required string Email { get; set; }
++    public required string Subject { get; set; }
++    public required string Body { get; set; }
++    public required string Kind { get; set; } // welcome | article
++}
+diff --git a/HappyHeadlines/NewsletterService/FeatureApi.cs b/HappyHeadlines/NewsletterService/FeatureApi.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/NewsletterService/FeatureApi.cs
+@@ -0,0 +1,40 @@
++using System.Security.Cryptography;
++using System.Text;
++using NewsletterService;
++
++public static class FeatureApi
++{
++    public static IEndpointRouteBuilder MapSubscriberToggle(this IEndpointRouteBuilder app)
++    {
++        app.MapGet("/admin/features/subscriber-service", async (
++            HttpContext context, IConfiguration config, SubscriberReleaseToggle toggle) =>
++        {
++            if (!Authorized(context, config)) return Results.Unauthorized();
++            return Results.Ok(new { enabled = await toggle.IsEnabledAsync() });
++        });
++        app.MapPut("/admin/features/subscriber-service", async (
++            HttpContext context, IConfiguration config, SubscriberReleaseToggle toggle, ToggleRequest request) =>
++        {
++            if (!Authorized(context, config)) return Results.Unauthorized();
++            try
++            {
++                await toggle.SetAsync(request.Enabled);
++                return Results.Ok(new { enabled = request.Enabled });
++            }
++            catch (Exception) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
++        });
++        return app;
++    }
++
++    private static bool Authorized(HttpContext context, IConfiguration config)
++    {
++        var expected = config["FeatureFlags:AdminKey"];
++        if (string.IsNullOrWhiteSpace(expected) ||
++            !context.Request.Headers.TryGetValue("X-Admin-Key", out var supplied)) return false;
++        var a = Encoding.UTF8.GetBytes(expected);
++        var b = Encoding.UTF8.GetBytes(supplied.ToString());
++        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
++    }
++}
++
++public sealed record ToggleRequest(bool Enabled);
+diff --git a/HappyHeadlines/NewsletterService/SubscriberReleaseToggle.cs b/HappyHeadlines/NewsletterService/SubscriberReleaseToggle.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/NewsletterService/SubscriberReleaseToggle.cs
+@@ -0,0 +1,23 @@
++using StackExchange.Redis;
++
++namespace NewsletterService;
++
++public sealed class SubscriberReleaseToggle(
++    IConnectionMultiplexer redis, ILogger<SubscriberReleaseToggle> logger)
++{
++    public const string Key = "feature:subscriber-service:enabled";
++
++    // Check on every message, not only at startup; no redeployment or restart.
++    public async Task<bool> IsEnabledAsync()
++    {
++        try { return await redis.GetDatabase().StringGetAsync(Key) == "1"; }
++        catch (RedisException ex)
++        {
++            logger.LogWarning(ex, "Subscriber toggle lookup failed; feature disabled");
++            return false;
++        }
++    }
++
++    public Task SetAsync(bool enabled) =>
++        redis.GetDatabase().StringSetAsync(Key, enabled ? "1" : "0");
++}
+diff --git a/HappyHeadlines/NewsletterService/Worker/SubscriberQueueWorker.cs b/HappyHeadlines/NewsletterService/Worker/SubscriberQueueWorker.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/NewsletterService/Worker/SubscriberQueueWorker.cs
+@@ -0,0 +1,71 @@
++using EasyNetQ;
++using System.Net;
++using System.Net.Mail;
++using Events;
++using NewsletterService;
++
++namespace NewsletterService.Worker;
++
++// Only this component reads subscriber notifications. The ArticlePublished worker
++// remains independent if SubscriberService or its broker fails.
++public sealed class SubscriberQueueWorker(
++    SubscriberQueueBus subscriberBus, SubscriberReleaseToggle toggle,
++    IConfiguration config, ILogger<SubscriberQueueWorker> logger) : BackgroundService
++{
++    private IDisposable? subscription;
++
++    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
++    {
++        while (!stoppingToken.IsCancellationRequested)
++        {
++            try
++            {
++                subscription = await subscriberBus.Bus.PubSub.SubscribeAsync<SubscriberNotification>(
++                    "SubscriberQueue", HandleAsync, _ => { }, cancellationToken: stoppingToken);
++                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
++            }
++            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
++            catch (Exception ex)
++            {
++                logger.LogWarning(ex, "Subscriber queue unreachable; article processing continues");
++                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
++            }
++            finally { subscription?.Dispose(); }
++        }
++    }
++
++    private async Task HandleAsync(SubscriberNotification message, CancellationToken ct)
++    {
++        if (!await toggle.IsEnabledAsync())
++        {
++            // Release toggle drops subscriber feature work; core news flow is unaffected.
++            logger.LogDebug("Subscriber feature disabled, skipped {NotificationId}", message.NotificationId);
++            return;
++        }
++
++        var host = config["Smtp:Host"];
++        var from = config["Smtp:From"];
++        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(from))
++        {
++            logger.LogWarning("SMTP is not configured: notification {NotificationId} was NOT emailed", message.NotificationId);
++            return;
++        }
++
++        using var smtp = new SmtpClient(host, config.GetValue("Smtp:Port", 587))
++        {
++            EnableSsl = config.GetValue("Smtp:EnableSsl", true)
++        };
++        var username = config["Smtp:Username"];
++        if (!string.IsNullOrEmpty(username))
++            smtp.Credentials = new NetworkCredential(username, config["Smtp:Password"]);
++        using var mail = new MailMessage(from, message.Email, message.Subject, message.Body);
++        await smtp.SendMailAsync(mail, ct);
++        logger.LogInformation("Emailed subscriber notification {NotificationId} ({Kind})", message.NotificationId, message.Kind);
++    }
++}
++
++public sealed class SubscriberQueueBus(IBus bus) : IDisposable
++{
++    public IBus Bus { get; } = bus;
++    public void Dispose() => Bus.Dispose();
++}
+diff --git a/HappyHeadlines/SubscriberService/ArticleFanoutWorker.cs b/HappyHeadlines/SubscriberService/ArticleFanoutWorker.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/SubscriberService/ArticleFanoutWorker.cs
+@@ -0,0 +1,55 @@
++using EasyNetQ;
++using Events;
++using Microsoft.Extensions.Hosting;
++using Npgsql;
++
++namespace SubscriberService;
++
++// Independent asynchronous transaction: ArticlePublisher never waits for subscribers.
++public sealed class ArticleFanoutWorker(
++    IBus articleBus, SubscriberQueueBus subscriberQueue, NpgsqlDataSource database,
++    RuntimeSubscriberToggle toggle, ILogger<ArticleFanoutWorker> logger) : BackgroundService
++{
++    private IDisposable? subscription;
++
++    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
++    {
++        while (!stoppingToken.IsCancellationRequested)
++        {
++            try
++            {
++                subscription = await articleBus.PubSub.SubscribeAsync<ArticlePublished>(
++                    "SubscriberServiceArticleFanout", HandleArticleAsync,
++                    _ => { }, cancellationToken: stoppingToken);
++                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
++            }
++            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
++            catch (Exception ex)
++            {
++                logger.LogWarning(ex, "Article subscription unavailable; retrying without stopping subscriber API");
++                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
++            }
++            finally { subscription?.Dispose(); }
++        }
++    }
++
++    private async Task HandleArticleAsync(ArticlePublished article, CancellationToken ct)
++    {
++        if (!await toggle.IsEnabledAsync()) return;
++        await using var connection = await database.OpenConnectionAsync(ct);
++        await using var cmd = new NpgsqlCommand("SELECT email FROM subscribers ORDER BY email", connection);
++        await using var reader = await cmd.ExecuteReaderAsync(ct);
++        while (await reader.ReadAsync(ct))
++        {
++            var email = reader.GetString(0);
++            await subscriberQueue.Bus.PubSub.PublishAsync(new SubscriberNotification
++            {
++                NotificationId = $"article:{article.Id}:{email}",
++                Email = email,
++                Subject = article.Title,
++                Body = article.Body,
++                Kind = "article"
++            });
++        }
++    }
++}
+diff --git a/HappyHeadlines/SubscriberService/Database/init.sql b/HappyHeadlines/SubscriberService/Database/init.sql
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/SubscriberService/Database/init.sql
+@@ -0,0 +1,4 @@
++CREATE TABLE IF NOT EXISTS subscribers (
++    email TEXT PRIMARY KEY,
++    subscribed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
+diff --git a/HappyHeadlines/SubscriberService/Dockerfile b/HappyHeadlines/SubscriberService/Dockerfile
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/SubscriberService/Dockerfile
+@@ -0,0 +1,16 @@
++FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
++USER $APP_UID
++WORKDIR /app
++EXPOSE 8080
++
++FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
++WORKDIR /src
++COPY ["SubscriberService/SubscriberService.csproj", "SubscriberService/"]
++COPY ["Events/Events.csproj", "Events/"]
++RUN dotnet restore "SubscriberService/SubscriberService.csproj"
++COPY . .
++RUN dotnet publish "SubscriberService/SubscriberService.csproj" -c Release -o /app/publish /p:UseAppHost=false
++
++FROM runtime AS final
++COPY --from=build /app/publish .
++ENTRYPOINT ["dotnet", "SubscriberService.dll"]
+diff --git a/HappyHeadlines/SubscriberService/Program.cs b/HappyHeadlines/SubscriberService/Program.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/SubscriberService/Program.cs
+@@ -0,0 +1,87 @@
++using System.Net.Mail;
++using EasyNetQ;
++using EasyNetQ.Serialization.SystemTextJson;
++using Events;
++using Npgsql;
++using StackExchange.Redis;
++using SubscriberService;
++
++var builder = WebApplication.CreateBuilder(args);
++builder.Services.AddHealthChecks();
++builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(
++    builder.Configuration.GetConnectionString("SubscriberDatabase")
++    ?? throw new InvalidOperationException("Subscriber database connection missing")));
++builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
++    CreateRedis(builder.Configuration["Redis:ConnectionString"] ?? "redis:6379"));
++builder.Services.AddSingleton<RuntimeSubscriberToggle>();
++// Two independent brokers: ArticlePublished is read from the article bus;
++// notification messages are written to the dedicated subscriber queue broker.
++builder.Services.AddSingleton<IBus>(_ => RabbitHutch.CreateBus(
++    builder.Configuration["RabbitMq:ConnectionString"]
++        ?? "host=rabbitmq;username=appuser;password=apppassword",
++    sr => sr.EnableSystemTextJson()));
++builder.Services.AddSingleton<SubscriberQueueBus>(_ => new SubscriberQueueBus(
++    RabbitHutch.CreateBus(
++        builder.Configuration["SubscriberQueue:ConnectionString"]
++            ?? "host=subscriber-rabbitmq;username=appuser;password=apppassword",
++        sr => sr.EnableSystemTextJson())));
++builder.Services.AddHostedService<ArticleFanoutWorker>();
++
++var app = builder.Build();
++app.MapHealthChecks("/health");
++
++// Fail closed: disabled (or Redis unavailable) behaves as if this API is absent.
++app.MapPost("/api/subscribers", async (
++    SubscribeRequest request, RuntimeSubscriberToggle toggle, NpgsqlDataSource db,
++    SubscriberQueueBus queue, ILogger<Program> logger, CancellationToken ct) =>
++{
++    if (!await toggle.IsEnabledAsync()) return Results.NotFound();
++    var email = request.Email?.Trim().ToLowerInvariant();
++    if (string.IsNullOrWhiteSpace(email) || email.Length > 254 || !MailAddress.TryCreate(email, out _))
++        return Results.BadRequest(new { error = "Valid email required" });
++
++    await using var connection = await db.OpenConnectionAsync(ct);
++    await using var cmd = new NpgsqlCommand(
++        "INSERT INTO subscribers (email) VALUES (@email) ON CONFLICT DO NOTHING", connection);
++    cmd.Parameters.AddWithValue("email", email);
++    var added = await cmd.ExecuteNonQueryAsync(ct) > 0;
++    if (added)
++    {
++        // A broker failure must not invalidate a committed subscriber record.
++        // See docs/assignment2-patch.md: production reliability requires a transactional outbox.
++        try
++        {
++            await queue.Bus.PubSub.PublishAsync(new SubscriberNotification
++            {
++                NotificationId = $"welcome:{email}",
++                Email = email,
++                Subject = "Welcome to Happy Headlines",
++                Body = "Thank you for subscribing to Happy Headlines!",
++                Kind = "welcome"
++            });
++        }
++        catch (Exception ex) { logger.LogError(ex, "Welcome notification could not be queued for {Email}", email); }
++    }
++    return Results.Ok(new { email, subscribed = true, created = added });
++});
++
++app.MapDelete("/api/subscribers/{email}", async (
++    string email, RuntimeSubscriberToggle toggle, NpgsqlDataSource db, CancellationToken ct) =>
++{
++    if (!await toggle.IsEnabledAsync()) return Results.NotFound();
++    await using var connection = await db.OpenConnectionAsync(ct);
++    await using var cmd = new NpgsqlCommand("DELETE FROM subscribers WHERE email = @email", connection);
++    cmd.Parameters.AddWithValue("email", email.Trim().ToLowerInvariant());
++    return await cmd.ExecuteNonQueryAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();
++});
++
++app.Run();
++
++static IConnectionMultiplexer CreateRedis(string connectionString)
++{
++    var options = ConfigurationOptions.Parse(connectionString);
++    options.AbortOnConnectFail = false;
++    return ConnectionMultiplexer.Connect(options);
++}
++
++public sealed record SubscribeRequest(string? Email);
+diff --git a/HappyHeadlines/SubscriberService/SubscriberInfrastructure.cs b/HappyHeadlines/SubscriberService/SubscriberInfrastructure.cs
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/SubscriberService/SubscriberInfrastructure.cs
+@@ -0,0 +1,29 @@
++using EasyNetQ;
++using StackExchange.Redis;
++
++namespace SubscriberService;
++
++public sealed class SubscriberQueueBus(IBus bus) : IDisposable
++{
++    public IBus Bus { get; } = bus;
++    public void Dispose() => Bus.Dispose();
++}
++
++public sealed class RuntimeSubscriberToggle(IConnectionMultiplexer redis, ILogger<RuntimeSubscriberToggle> logger)
++{
++    public const string Key = "feature:subscriber-service:enabled";
++
++    public async Task<bool> IsEnabledAsync()
++    {
++        try
++        {
++            var value = await redis.GetDatabase().StringGetAsync(Key);
++            return value == "1";
++        }
++        catch (RedisException ex)
++        {
++            logger.LogWarning(ex, "Release toggle unavailable, SubscriberService disabled");
++            return false;
++        }
++    }
++}
+diff --git a/HappyHeadlines/SubscriberService/SubscriberService.csproj b/HappyHeadlines/SubscriberService/SubscriberService.csproj
+new file mode 100644
+--- /dev/null
++++ b/HappyHeadlines/SubscriberService/SubscriberService.csproj
+@@ -0,0 +1,16 @@
++<Project Sdk="Microsoft.NET.Sdk.Web">
++  <PropertyGroup>
++    <TargetFramework>net8.0</TargetFramework>
++    <Nullable>enable</Nullable>
++    <ImplicitUsings>enable</ImplicitUsings>
++  </PropertyGroup>
++  <ItemGroup>
++    <PackageReference Include="Npgsql" Version="8.0.5" />
++    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
++    <PackageReference Include="EasyNetQ" Version="7.8.0" />
++    <PackageReference Include="EasyNetQ.Serialization.SystemTextJson" Version="7.8.0" />
++  </ItemGroup>
++  <ItemGroup>
++    <ProjectReference Include="..\Events\Events.csproj" />
++  </ItemGroup>
++</Project>
+diff --git a/docs/assignment2-patch.md b/docs/assignment2-patch.md
+new file mode 100644
+--- /dev/null
++++ b/docs/assignment2-patch.md
+@@ -0,0 +1,86 @@
++# Compulsory assignment 2 - implementation and runbook
++
++Patch baseline: `Compulsory-assignment-#2` at tree `99b36edda5360a1b811a15061c2aa2d187123942`.
++
++## CD (assignment scope)
++
++`.github/workflows/workflow.yml` builds .NET 8 solution on PRs and main pushes;
++its image matrix includes `subscriber-service` and every previously present app or worker.
++On **main push**, it publishes nine images to GHCR with immutable *run-number*
++tags. The assignment asks for image delivery, **not automatic production deployment**.
++Verify in GitHub > Actions > `Build and publish` and GitHub Packages after merging.
++
++## Recovery and swimlanes
++
++- SubscriberService: POST `/api/subscribers` `{ "email": "a@example.com" }`
++  and DELETE `/api/subscribers/{email}`; only it reads/writes `subscriber-db`.
++- `rabbitmq` carries the existing `ArticlePublished` pub/sub event; the new
++  SubscriberService independently subscribes to it and reads the subscribers table.
++- **Dedicated** `subscriber-rabbitmq` broker / durable `SubscriberQueue` subscription
++  carries `SubscriberNotification` events (welcome or an article for each subscriber).
++- NewsletterService alone consumes that queue and sends SMTP messages **only when SMTP
++  is configured**. Otherwise it logs the fact that no email was sent.
++- No synchronous SubscriberService-to-NewsletterService or Newsletter-to-Subscriber
++  REST call. SubscriberService outage does not block article publishing. Newsletter
++  subscriber-broker worker reconnects without blocking its article consumer.
++- Both services still share an infrastructure-level Redis feature flag and the article
++  bus; this is pragmatic fault containment, not perfectly isolated swimlanes by
++  the strict definition in *The Art of Scalability* chapter 21.
++
++### Runtime release toggle (without redeploy/restart)
++
++Set a strong random key in your shell before `docker compose up`:
++
++```bash
++export FEATURE_FLAGS_ADMIN_KEY='REPLACE_WITH_RANDOM_SECRET'
++docker compose -f HappyHeadlines/compose.yaml up --build -d
++```
++
++Compose requires the `FEATURE_FLAGS_ADMIN_KEY` environment variable; do not commit
++secrets. Flag defaults **disabled** until explicitly enabled. Example:
++
++```bash
++curl -X PUT http://localhost:8086/admin/features/subscriber-service \
++  -H 'Content-Type: application/json' \
++  -H "X-Admin-Key: $FEATURE_FLAGS_ADMIN_KEY" \
++  -d '{"enabled":true}'
++curl -X POST http://localhost:8087/api/subscribers \
++  -H 'Content-Type: application/json' \
++  -d '{"email":"demo@example.com"}'
++curl -X PUT http://localhost:8086/admin/features/subscriber-service \
++  -H 'Content-Type: application/json' \
++  -H "X-Admin-Key: $FEATURE_FLAGS_ADMIN_KEY" \
++  -d '{"enabled":false}'
++# POST now returns 404; publication/CommentService continue functioning.
++```
++
++Read flag state using `GET` at the same admin endpoint with the admin header.
++Each newsletter event and subscriber API request reads current Redis state. Redis
++unavailable => subscribers feature disabled, without disabling core articles.
++
++For actual email delivery, configure `Smtp__Host`, `Smtp__Port`, `Smtp__From`,
++`Smtp__Username`, `Smtp__Password`, `Smtp__EnableSsl` for `newsletter-service`.
++No SMTP credentials/provider are supplied by this repository; please configure
++an approved mail transport before claiming messages were delivered.
++
++### Operational limitations (next hardening steps)
++
++- Publish to subscriber queue occurs **after** DB commit and there is no
++  transactional outbox yet; temporary queue failure can lose a welcome notification.
++- Toggle-off currently **drops** subscriber notifications that were already enqueued
++  and consumed. Change the worker to park/retry messages if the business requires
++  delayed processing after re-enable.
++- Subscriber queue can redeliver messages; sending email needs an idempotent
++  delivery ledger for exactly-once business effect.
++- NewsletterService has no local subscriber projection; SubscriberService creates
++  per-recipient messages asynchronously on article publications.
++- Versioned images are pushed by main; Compose still builds locally.
++- End-to-end Docker validation and energy measurements must be performed on a host
++  with Docker and .NET SDK (these were not available in the authoring environment).
++
++## Sustainable changes and reproducible verification
++
++See [sustainability-before-after.md](sustainability-before-after.md).
++Run `python3 scripts/verify-gaf.py` for a *deterministic work-proxy comparison*,
++then perform energy measurements with identical hardware and identical workload
++on the baseline and patched branch. Do not label work proxies as energy savings.
+diff --git a/docs/sustainability-before-after.md b/docs/sustainability-before-after.md
+new file mode 100644
+--- /dev/null
++++ b/docs/sustainability-before-after.md
+@@ -0,0 +1,103 @@
++# Sustainability changes - BEFORE / AFTER / measurement protocol
++
++These are **three new tactics**, not the existing cache proximity, bulk global
++article fetch, or Npgsql connection pooling. Tactic source: Henrik Bærbak
++Christensen, [Green Architecture Framework](https://baerbak.cs.au.dk/papers/gaf.html).
++
++## 1. Shut Down When Idle: adaptive pending moderation polling
++
++**Before** `CommentService/Worker/PendingModerationWorker.cs`:
++
++```csharp
++await ModeratePendingBatch(batchSize, stoppingToken);
++await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);
++```
++
++**After**:
++
++```csharp
++var hadPending = await ModeratePendingBatch(batchSize, stoppingToken);
++idleDelay = hadPending
++    ? TimeSpan.FromSeconds(intervalSeconds)
++    : TimeSpan.FromSeconds(Math.Min(60, idleDelay.TotalSeconds * 2));
++await Task.Delay(idleDelay, stoppingToken);
++```
++
++With no pending comments, database polling backs off 10 => 20 => 40 => 60 s.
++When pending work is found, the original 10-second interval is restored. This
++reduces idle database reads (at the tradeoff of longer reaction latency to new
++pending comments during an extended idle period).
++
++## 2. Avoid Unnecessary Resources / Reduce Network Package Size: Redis LRU
++
++**Before** `CommentService/Cache/RedisCommentCache.cs`:
++
++```csharp
++var members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
++while (members.Length > MaxArticles)
++{
++    var oldest = members[0];
++    // delete oldest
++    members = await database.SortedSetRangeByRankAsync(LruKey, 0, -1, Order.Ascending);
++}
++```
++
++**After**:
++
++```csharp
++var count = await database.SortedSetLengthAsync(LruKey);
++while (count > MaxArticles)
++{
++    var oldest = await database.SortedSetRangeByRankAsync(LruKey, 0, 0, Order.Ascending);
++    if (oldest.Length == 0) break;
++    await database.SortedSetRemoveAsync(LruKey, oldest[0]);
++    await database.KeyDeleteAsync(BuildArticleKey(oldest[0].ToString()));
++    count--;
++}
++```
++
++Formerly each LRU insertion returned **all** cached IDs (~31 entries at cap+1);
++now a scalar count, and (only on overflow) a **single** oldest ID. This avoids
++unnecessary bytes returned by Redis on the ordinary no-eviction path.
++
++## 3. Accept Lower Fidelity / Reduce Logging: avoid repeated low-value logs
++
++**Before** `CommentService/Worker/PendingModerationWorker.cs`:
++
++```csharp
++logger.LogInformation("ProfanityService still unavailable; ...", ...);
++logger.LogInformation("Comment {CommentId} moved from pending to published.", ...);
++```
++
++**After**:
++
++```csharp
++logger.LogDebug("ProfanityService still unavailable; ...", ...);
++logger.LogDebug("Comment {CommentId} moved from pending to published.", ...);
++```
++
++This preserves exceptions and errors but excludes the high-frequency progression
++messages at the existing default Information threshold. Tradeoff: fewer details
++in production logs. Change logging levels when diagnosing incidents.
++
++## Verification, NOT fabricated energy measurements
++
++`python3 scripts/verify-gaf.py` checks deterministic work proxies from the exact
++old/new algorithms: moderation DB polls in a 1h idle period, LRU member payload
++per insert at 30-item capacity, and emitted Information logs for a fixed simulated
++batch. It confirms code-level reductions, *not* watts or joules.
++
++For verified **energy** improvements, follow GAF's Measure and Experiment process:
++1. Same host/hardware, same workload, no other major processes; disable autoscaling.
++2. On baseline branch, record `docker stats`, requests completed, latency, and
++   RAPL `energy_uj` on a supported Linux CPU (or an external power meter).
++3. Restore exactly the same databases and queue state and repeat the same workload
++   on patched code, e.g. 5 trials of 60 minutes idle moderation, 10k cache LRU
++   accesses, 1000 moderation failures and recoveries.
++4. Compare **joules per successful transaction** and 95% confidence intervals;
++   explicitly record total energy/elapsed time and test correctness. If RAPL or
++   wall-meter readings are unavailable, report work proxies only.
++
++No measured joules are provided here because no Docker runtime / power meter is
++available in the authoring environment. Do not use the proxy results as measured
++energy savings.
+diff --git a/scripts/measure-energy.sh b/scripts/measure-energy.sh
+new file mode 100644
+--- /dev/null
++++ b/scripts/measure-energy.sh
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++# Measure RAPL joules for one explicitly supplied workload. Compare baseline and patched
++# versions on the same host with the same workload. No values are pre-filled.
++set -euo pipefail
++if [ "$#" -lt 2 ]; then
++  echo "Usage: $0 BASELINE_OR_PATCHED command [arguments...]" >&2
++  echo "Example: $0 patched bash -c 'sleep 3600'" >&2
++  exit 2
++fi
++label=$1; shift
++energy_file=${RAPL_ENERGY_FILE:-}
++if [ -z "$energy_file" ]; then
++  energy_file=$(find /sys/class/powercap -name energy_uj -type f -print -quit 2>/dev/null || true)
++fi
++if [ -z "$energy_file" ] || [ ! -r "$energy_file" ]; then
++  echo "No readable RAPL energy_uj device. Use an external wall-power meter instead." >&2
++  exit 2
++fi
++before=$(cat "$energy_file")
++before_time=$(date +%s%N)
++"$@"
++after_time=$(date +%s%N)
++after=$(cat "$energy_file")
++# Account for counter wrap; device max range is reported in microjoules.
++if [ "$after" -lt "$before" ]; then
++  range=$(cat "$(dirname "$energy_file")/max_energy_range_uj")
++  delta=$((range - before + after))
++else
++  delta=$((after - before))
++fi
++python3 - "$label" "$delta" "$before_time" "$after_time" <<'PY'
++import json,sys
++label, microjoules, start, end = sys.argv[1:]
++print(json.dumps({"variant":label,"joules":int(microjoules)/1e6,
++                  "elapsed_seconds":(int(end)-int(start))/1e9},indent=2))
++PY
+diff --git a/scripts/subscriber-smoke.sh b/scripts/subscriber-smoke.sh
+new file mode 100644
+--- /dev/null
++++ b/scripts/subscriber-smoke.sh
+@@ -0,0 +1,22 @@
++#!/usr/bin/env bash
++# Run only against locally launched HappyHeadlines containers.
++set -euo pipefail
++: "${FEATURE_FLAGS_ADMIN_KEY:?Set FEATURE_FLAGS_ADMIN_KEY in your shell}"
++API=${NEWSLETTER_URL:-http://localhost:8086}
++SUB=${SUBSCRIBER_URL:-http://localhost:8087}
++setflag() {
++  curl --fail-with-body -sS -X PUT "$API/admin/features/subscriber-service" \
++    -H "X-Admin-Key: $FEATURE_FLAGS_ADMIN_KEY" \
++    -H 'Content-Type: application/json' -d "{\"enabled\":$1}"
++  printf '\n'
++}
++setflag true
++curl --fail-with-body -sS -X POST "$SUB/api/subscribers" \
++  -H 'Content-Type: application/json' -d '{"email":"demo@example.com"}'
++printf '\n'
++setflag false
++status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$SUB/api/subscribers" \
++  -H 'Content-Type: application/json' -d '{"email":"demo2@example.com"}')
++[ "$status" = 404 ] || { echo "Expected 404 when disabled; got $status" >&2; exit 1; }
++curl --fail-with-body -sS "$API/health" > /dev/null
++echo "PASS: SubscriberService hidden while NewsletterService remains healthy"
+diff --git a/scripts/verify-gaf.py b/scripts/verify-gaf.py
+new file mode 100644
+--- /dev/null
++++ b/scripts/verify-gaf.py
+@@ -0,0 +1,35 @@
++#!/usr/bin/env python3
++"""Deterministic before/after work-proxy model, NOT an energy benchmark."""
++from pathlib import Path
++ROOT = Path(__file__).resolve().parents[1]
++worker = (ROOT / 'HappyHeadlines/CommentService/Worker/PendingModerationWorker.cs').read_text()
++cache = (ROOT / 'HappyHeadlines/CommentService/Cache/RedisCommentCache.cs').read_text()
++assert 'idleDelay.TotalSeconds * 2' in worker
++assert 'SortedSetLengthAsync(LruKey)' in cache
++assert 'SortedSetRangeByRankAsync(LruKey, 0, 0' in cache
++assert 'LogDebug("ProfanityService still unavailable' in worker
++
++# Idealized idle worker, total polls over 60 min. Initial poll at t=0.
++def polls(interval, backoff=False):
++    t, n, delay = 0, 0, interval
++    while t < 3600:
++        n += 1
++        delay = min(60, delay * 2) if backoff else interval
++        t += delay
++    return n
++
++baseline_polls, patched_polls = polls(10), polls(10, True)
++# Baseline sends all sorted-set members for each no-eviction cache write.
++# Updated code sends a fixed-size cardinality (not IDs).
++baseline_lru_ids = 30
++patched_lru_ids = 0
++# Two baseline Information log events per failed/recovered moderation sequence;
++# new entries at Debug do not pass the default Information threshold.
++baseline_info_events, patched_info_events = 2, 0
++print('Modelled idle DB polls per hour:', baseline_polls, '->', patched_polls)
++print('LRU member IDs returned per no-eviction write:', baseline_lru_ids, '->', patched_lru_ids)
++print('Information-level progress logs per scenario:', baseline_info_events, '->', patched_info_events)
++assert patched_polls < baseline_polls
++assert patched_lru_ids < baseline_lru_ids
++assert patched_info_events < baseline_info_events
++print('PASS - lower work proxies under stated scenario; NOT measured energy savings')

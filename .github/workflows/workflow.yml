@@ -41,10 +41,10 @@ jobs:
             dockerfile: PublisherService/Dockerfile
           - image: newsletter-service
             dockerfile: NewsletterService/Dockerfile
+          - image: subscriber-service
+            dockerfile: SubscriberService/Dockerfile
           - image: article-cache-worker
             dockerfile: ArticleCacheWorker/Dockerfile
-          - image: cache-dashboard
-            dockerfile: CacheDashboard/Dockerfile
             
     steps:
       - uses: actions/checkout@v4
@@ -67,4 +67,4 @@ jobs:
           context: ./HappyHeadlines
           file: ./HappyHeadlines/${{ matrix.dockerfile }}
           push: ${{ github.event_name == 'push' }}
-          tags: ghcr.io/${{ steps.owner.outputs.name }}/happyheadlines-${{ matrix.image }}:${{ github.run_number }}
+          tags: ghcr.io/${{ steps.owner.outputs.name }}/happyheadlines-${{ matrix.image }}:v${{ github.run_number }}

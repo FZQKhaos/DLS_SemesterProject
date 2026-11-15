@@ -15,6 +15,7 @@ public class Program
         
         builder.AddMonitoring("DraftService");
         
+        builder.Services.AddHealthChecks();
         builder.Services.AddControllers();
         
         var connectionString = builder.Configuration.GetConnectionString("DraftDatabase")
@@ -28,6 +29,7 @@ public class Program
         builder.Services.AddSwaggerGen();
         
         var app = builder.Build();
+        app.UseHappyHeadlinesRequestLogging();
         
         // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())
@@ -41,7 +43,8 @@ public class Program
         //app.UseHttpsRedirection();
         try
         {
-            app.Run();
+            app.MapHealthChecks("/health");
+        app.Run();
         }
         finally
         {

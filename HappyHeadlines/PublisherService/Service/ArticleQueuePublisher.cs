@@ -8,7 +8,7 @@ using PublisherService.Domain;
 
 namespace PublisherService.Service;
 
-public sealed class ArticleQueuePublisher(IBus bus)
+public sealed class ArticleQueuePublisher(IBus bus, ILogger<ArticleQueuePublisher> logger)
 {
     private static readonly TraceContextPropagator Propagator = new();
 
@@ -31,5 +31,7 @@ public sealed class ArticleQueuePublisher(IBus bus)
             static (articleMessage, key, value) => articleMessage.Header[key] = value);
         activity?.SetTag("article.id", article.Id);
         await bus.PubSub.PublishAsync(message);
+        Telemetry.RecordWorkflow("article.queued", "success");
+        logger.LogInformation("Queued article {ArticleId} for continent {Continent}", article.Id, article.Continent);
     }
 }
